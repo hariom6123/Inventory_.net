@@ -189,12 +189,12 @@ jobs:
           dotnet list ${{ env.SOLUTION }} package --vulnerable --include-transitive > nuget-report.txt 2>&1 || true
           echo "NuGet report generated. Size: $(wc -c < nuget-report.txt) bytes"
 
-      # ── 🤖 AGENT 1: Dependency Vulnerability Analyst (Claude AI) ─────────
+      # ── 🤖 AGENT 1: Dependency Vulnerability Analyst (NVIDIA NIM) ─────────
       # Reads the NuGet vulnerability report and produces a
       # prioritized, human-readable risk summary with fix advice.
       - name: Agent 1 - Dependency Vulnerability Analyst
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
         run: |
           echo "🤖 Running Agent 1: Dependency Vulnerability Analyst..."
 
@@ -203,7 +203,7 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg report "$NUGET_REPORT" \
             '{
-              model: "claude-sonnet-4-6",
+              model: "meta/llama-3.1-70b-instruct",
               max_tokens: 1024,
               messages: [{
                 role: "user",
@@ -211,20 +211,19 @@ jobs:
               }]
             }')
 
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          RESPONSE=$(curl -s https://integrate.api.nvidia.com/v1/chat/completions \
             -H "Content-Type: application/json" \
-            -H "x-api-key: $ANTHROPIC_API_KEY" \
-            -H "anthropic-version: 2023-06-01" \
+            -H "Authorization: Bearer $NVDAI_API_KEY" \
             -d "$PAYLOAD")
 
           echo "──────────────────────────────────────────"
           echo "🤖 Agent 1 - Dependency Vulnerability Analysis"
           echo "──────────────────────────────────────────"
-          echo "$RESPONSE" | jq -r '.content[0].text // "Agent response unavailable"'
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"'
           echo "──────────────────────────────────────────"
 
           # Save report for summary
-          echo "$RESPONSE" | jq -r '.content[0].text // ""' > agent1-report.txt
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > agent1-report.txt
 
       - name: Upload Agent 1 report
         if: always()
