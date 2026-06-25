@@ -176,6 +176,65 @@ jobs:
           exit-code:    '0'
           ignore-unfixed: true
 
+      # ── Generate NuGet Vulnerability Report (input for Agent 1) ──────────
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Generate NuGet vulnerability report
+        run: |
+          echo "Scanning NuGet packages for known vulnerabilities..."
+          dotnet restore ${{ env.SOLUTION }}
+          dotnet list ${{ env.SOLUTION }} package --vulnerable --include-transitive > nuget-report.txt 2>&1 || true
+          echo "NuGet report generated. Size: $(wc -c < nuget-report.txt) bytes"
+
+      # ── 🤖 AGENT 1: Dependency Vulnerability Analyst (Claude AI) ─────────
+      # Reads the NuGet vulnerability report and produces a
+      # prioritized, human-readable risk summary with fix advice.
+      - name: Agent 1 - Dependency Vulnerability Analyst
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "🤖 Running Agent 1: Dependency Vulnerability Analyst..."
+
+          NUGET_REPORT=$(cat nuget-report.txt 2>/dev/null || echo "No report found")
+
+          PAYLOAD=$(jq -n \
+            --arg report "$NUGET_REPORT" \
+            '{
+              model: "claude-sonnet-4-6",
+              max_tokens: 1024,
+              messages: [{
+                role: "user",
+                content: ("You are a .NET security expert. Analyze this NuGet dependency report for the Inventory Management System project and:\n1. List any outdated or vulnerable packages, categorizing each by severity (CRITICAL / HIGH / MEDIUM / LOW)\n2. Recommend the exact version to upgrade to for each vulnerable package\n3. Flag any that could affect authentication, data handling, or API security\n4. Give an overall dependency risk score out of 10\n\nKeep the response concise and actionable. If no vulnerabilities are found, state that clearly.\n\nReport:\n" + $report)
+              }]
+            }')
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$PAYLOAD")
+
+          echo "──────────────────────────────────────────"
+          echo "🤖 Agent 1 - Dependency Vulnerability Analysis"
+          echo "──────────────────────────────────────────"
+          echo "$RESPONSE" | jq -r '.content[0].text // "Agent response unavailable"'
+          echo "──────────────────────────────────────────"
+
+          # Save report for summary
+          echo "$RESPONSE" | jq -r '.content[0].text // ""' > agent1-report.txt
+
+      - name: Upload Agent 1 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent1-dependency-report
+          path: agent1-report.txt
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Run Trivy filesystem scan (SARIF)
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
