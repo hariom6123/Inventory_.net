@@ -1,0 +1,56 @@
+@model InventoryManagement.Application.DTOs.ProductDto
+@{
+    ViewData["Title"] = "Product Details";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-action="Index">Products</a></li>
+        <li class="breadcrumb-item active">@Model.ProductName</li>
+    </ol>
+</nav>
+
+<div class="card table-card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">@Model.ProductName</h5>
+        <div>
+            <a asp-action="Edit" asp-route-id="@Model.ProductId" class="btn btn-sm btn-primary"><i class="bi bi-pencil"></i> Edit</a>
+            <a asp-action="Index" class="btn btn-sm btn-outline-secondary">Back</a>
+        </div>
+    </div>
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.ProductId)</dt>
+            <dd class="col-sm-9">@Model.ProductId</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.ProductName)</dt>
+            <dd class="col-sm-9">@Model.ProductName</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.SKU)</dt>
+            <dd class="col-sm-9">@Model.SKU</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.Description)</dt>
+            <dd class="col-sm-9">@Model.Description</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.Price)</dt>
+            <dd class="col-sm-9">@Model.Price.ToString("C")</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.Quantity)</dt>
+            <dd class="col-sm-9">@Model.Quantity</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.LowStockThreshold)</dt>
+            <dd class="col-sm-9">@Model.LowStockThreshold</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.CategoryName)</dt>
+            <dd class="col-sm-9">@Model.CategoryName</dd>
+
+            <dt class="col-sm-3">@Html.DisplayNameFor(m => m.CreatedDate)</dt>
+            <dd class="col-sm-9">@Model.CreatedDate.ToString("yyyy-MM-dd HH:mm")</dd>
+        </dl>
+    </div>
+    <div class="card-footer bg-white d-flex gap-2">
+        <a asp-controller="Inventory" asp-action="Adjust" asp-route-productId="@Model.ProductId" class="btn btn-outline-info"><i class="bi bi-sliders me-1"></i>Adjust</a>
+        <a asp-controller="Inventory" asp-action="StockIn" class="btn btn-outline-success"><i class="bi bi-plus-circle me-1"></i>Stock In</a>
+        <a asp-controller="Inventory" asp-action="StockOut" class="btn btn-outline-warning"><i class="bi bi-dash-circle me-1"></i>Stock Out</a>
+    </div>
+</div>

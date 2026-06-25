@@ -1,0 +1,11 @@
+C:\Inventory_.net\src\InventoryManagement.Domain\bin\Release\net8.0\InventoryManagement.Domain.deps.json
+C:\Inventory_.net\src\InventoryManagement.Domain\bin\Release\net8.0\InventoryManagement.Domain.dll
+C:\Inventory_.net\src\InventoryManagement.Domain\bin\Release\net8.0\InventoryManagement.Domain.pdb
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\InventoryManagement.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\InventoryManagement.Domain.AssemblyInfoInputs.cache
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\InventoryManagement.Domain.AssemblyInfo.cs
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\InventoryManagement.Domain.csproj.CoreCompileInputs.cache
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\InventoryManagement.Domain.dll
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\refint\InventoryManagement.Domain.dll
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\InventoryManagement.Domain.pdb
+C:\Inventory_.net\src\InventoryManagement.Domain\obj\Release\net8.0\ref\InventoryManagement.Domain.dll

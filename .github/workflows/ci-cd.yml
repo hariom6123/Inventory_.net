@@ -1,0 +1,378 @@
+# ==============================================================================
+# Inventory Management System — CI/CD Pipeline
+# ==============================================================================
+# Stages:
+#   1. Build              — restore + compile the .NET 8 solution
+#   2. Unit Tests         — run xUnit suite with code coverage
+#   3. Trivy FS Scan      — static filesystem vulnerability scan
+#   4. Docker Build       — multi-stage Docker image build + push to GHCR
+#   5. Trivy Image Scan   — vulnerability scan of the built image
+#   6. Publish Artifact   — final aggregated release artifact
+# ==============================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, feature/** ]
+    tags:    [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main, master, feature/** ]
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push image to GHCR on workflow_dispatch'
+        required: false
+        default: 'true'
+        type: boolean
+
+# ------------------------------------------------------------------------------
+# Concurrency — cancel in-flight runs on the same branch
+# ------------------------------------------------------------------------------
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  SOLUTION:       InventoryManagementSystem.sln
+  PROJECT:        src/InventoryManagement.Web/InventoryManagement.Web.csproj
+  IMAGE_NAME:     inventorymanagement
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/inventorymanagement
+
+permissions:
+  contents:       read
+  packages:       write
+  security-events: write
+  pull-requests:  write
+
+# ==============================================================================
+# Jobs
+# ==============================================================================
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # 1. Build — restore + compile the solution
+  # ---------------------------------------------------------------------------
+  build:
+    name: 1️⃣ Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key:    ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: Build (Release)
+        run: dotnet build ${{ env.SOLUTION }} --configuration Release --no-restore
+
+      - name: Publish web project
+        run: dotnet publish ${{ env.PROJECT }} \
+              --configuration Release \
+              --no-build \
+              --output publish
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-publish
+          path: publish/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 2. Unit Tests — run xUnit suite with coverage
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: 2️⃣ Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key:    ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test ${{ env.SOLUTION }} \
+            --configuration Release \
+            --no-restore \
+            --logger "trx;LogFileName=test-results.trx" \
+            --logger "console;verbosity=normal" \
+            --collect:"XPlat Code Coverage"
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/TestResults/**/*.trx'
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publish code coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage
+          path: '**/coverage.cobertura.xml'
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 3. Trivy Filesystem Scan
+  # ---------------------------------------------------------------------------
+  trivy-fs-scan:
+    name: 3️⃣ Trivy FS Scan
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan (table)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type:    'fs'
+          scan-ref:     '.'
+          format:       'table'
+          output:       'trivy-fs-report.txt'
+          severity:     'CRITICAL,HIGH'
+          exit-code:    '0'
+          ignore-unfixed: true
+
+      - name: Run Trivy filesystem scan (SARIF)
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref:  '.'
+          format:    'sarif'
+          output:    'trivy-fs-report.sarif'
+          severity:  'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: github.event_name != 'pull_request' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs-report.sarif
+        continue-on-error: true
+
+      - name: Upload Trivy filesystem report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report
+          path: trivy-fs-report.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 4. Docker Build
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: 4️⃣ Docker Build
+    runs-on: ubuntu-latest
+    needs: [ build, unit-tests ]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download published artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webapp-publish
+          path: publish
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context:    .
+          file:       ./Dockerfile
+          push:       ${{ github.event_name != 'pull_request' }}
+          tags:       ${{ steps.meta.outputs.tags }}
+          labels:     ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          provenance: false
+
+      - name: Tag local image for image scan
+        if: github.event_name == 'pull_request'
+        run: |
+          docker build \
+            --tag ${{ env.IMAGE_NAME }}:latest \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            .
+
+  # ---------------------------------------------------------------------------
+  # 5. Trivy Image Scan
+  # ---------------------------------------------------------------------------
+  trivy-image-scan:
+    name: 5️⃣ Trivy Image Scan
+    runs-on: ubuntu-latest
+    needs: [ docker-build ]
+    timeout-minutes: 10
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (for private images)
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy image scan (table)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref:    ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+          format:       'table'
+          output:       'trivy-image-report.txt'
+          severity:     'CRITICAL,HIGH'
+          exit-code:    '0'
+          ignore-unfixed: true
+
+      - name: Run Trivy image scan (SARIF)
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+          format:    'sarif'
+          output:    'trivy-image-report.sarif'
+          severity:  'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload Trivy image results to GitHub Security tab
+        if: github.event_name != 'pull_request' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-report.sarif
+        continue-on-error: true
+
+      - name: Upload Trivy image report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report
+          path: trivy-image-report.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 6. Publish Artifact — final aggregated artifact step
+  # ---------------------------------------------------------------------------
+  publish-artifact:
+    name: 6️⃣ Publish Artifact
+    runs-on: ubuntu-latest
+    needs: [ build, unit-tests, trivy-fs-scan, docker-build, trivy-image-scan ]
+    if: success()
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate build reports
+        run: |
+          mkdir -p artifact-reports
+          {
+            echo "# 📦 Inventory Management System — Build Summary"
+            echo ""
+            echo "- **Build:** ✅ SUCCESS"
+            echo "- **Unit Tests:** ✅ PASSED"
+            echo "- **Trivy FS Scan:** ✅ COMPLETED"
+            echo "- **Docker Build:** ✅ SUCCESS"
+            echo "- **Trivy Image Scan:** ✅ COMPLETED"
+            echo ""
+            echo "## Build Metadata"
+            echo ""
+            echo "| Field        | Value |"
+            echo "|--------------|-------|"
+            echo "| Commit       | \`${{ github.sha }}\` |"
+            echo "| Branch       | \`${{ github.ref }}\` |"
+            echo "| Trigger      | \`${{ github.event_name }}\` |"
+            echo "| Actor        | \`${{ github.actor }}\` |"
+            echo "| Image        | \`${{ env.REGISTRY_IMAGE }}:${{ github.sha }}\` |"
+            echo ""
+            echo "## Pipeline Stages"
+            echo ""
+            echo "1. **Build** — restore + compile .NET 8 solution"
+            echo "2. **Unit Tests** — xUnit with code coverage"
+            echo "3. **Trivy FS Scan** — filesystem vulnerability scan"
+            echo "4. **Docker Build** — multi-stage build + push to GHCR"
+            echo "5. **Trivy Image Scan** — image vulnerability scan"
+            echo "6. **Publish Artifact** — aggregated release output"
+          } > artifact-reports/SUMMARY.md
+
+      - name: Upload final artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-management-artifact
+          path: artifact-reports/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Notify success 🎉
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "✅ CI/CD pipeline completed successfully."
+          echo "Image: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}"

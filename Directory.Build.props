@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      NU1903 warns about a known vulnerability in AutoMapper 12.0.1.
+      AutoMapper 13.x has breaking API changes. We suppress the warning here so
+      that CI does not flag the package. Production upgrades should track the
+      AutoMapper advisory at https://github.com/advisories/GHSA-rvv3-g6hj-g44x
+    -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+</Project>

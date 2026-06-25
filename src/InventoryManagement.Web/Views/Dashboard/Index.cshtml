@@ -1,0 +1,171 @@
+@model InventoryManagement.Web.ViewModels.DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3 mb-1">Inventory Dashboard</h1>
+        <p class="text-muted mb-0">Overview of products, categories, and inventory value.</p>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-xl">
+        <div class="card card-stat">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon products me-3"><i class="bi bi-box"></i></div>
+                <div>
+                    <div class="text-muted text-uppercase small">Total Products</div>
+                    <div class="display-6">@Model.Summary.TotalProducts</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl">
+        <div class="card card-stat">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon categories me-3"><i class="bi bi-tags"></i></div>
+                <div>
+                    <div class="text-muted text-uppercase small">Total Categories</div>
+                    <div class="display-6">@Model.Summary.TotalCategories</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl">
+        <div class="card card-stat">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon lowstock me-3"><i class="bi bi-exclamation-circle"></i></div>
+                <div>
+                    <div class="text-muted text-uppercase small">Low Stock</div>
+                    <div class="display-6">@Model.Summary.LowStockProducts</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl">
+        <div class="card card-stat">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon outofstock me-3"><i class="bi bi-x-octagon"></i></div>
+                <div>
+                    <div class="text-muted text-uppercase small">Out of Stock</div>
+                    <div class="display-6">@Model.Summary.OutOfStockProducts</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-12 col-xl">
+        <div class="card card-stat">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon value me-3"><i class="bi bi-cash-coin"></i></div>
+                <div>
+                    <div class="text-muted text-uppercase small">Total Inventory Value</div>
+                    <div class="display-6">@Model.Summary.TotalInventoryValue.ToString("C")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card table-card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body d-flex flex-wrap gap-2">
+                <a class="btn btn-primary" asp-controller="Products" asp-action="Create"><i class="bi bi-plus-circle me-1"></i>New Product</a>
+                <a class="btn btn-outline-primary" asp-controller="Categories" asp-action="Create"><i class="bi bi-tag me-1"></i>New Category</a>
+                <a class="btn btn-outline-success" asp-controller="Inventory" asp-action="StockIn"><i class="bi bi-arrow-down-circle me-1"></i>Stock In</a>
+                <a class="btn btn-outline-warning" asp-controller="Inventory" asp-action="StockOut"><i class="bi bi-arrow-up-circle me-1"></i>Stock Out</a>
+                <a class="btn btn-outline-secondary" asp-controller="Inventory" asp-action="History"><i class="bi bi-clock-history me-1"></i>View History</a>
+            </div>
+        </div>
+
+        <div class="card table-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">Recent Inventory Activity</h5>
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Type</th>
+                            <th class="text-end">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!Model.RecentTransactions.Any())
+                        {
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">No transactions recorded yet.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var tx in Model.RecentTransactions.Take(10))
+                            {
+                                <tr>
+                                    <td>@tx.TransactionDate.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>
+                                        <div class="fw-semibold">@tx.ProductName</div>
+                                        <div class="text-muted small">@tx.ProductSKU</div>
+                                    </td>
+                                    <td>
+                                        @if (tx.TransactionType == TransactionType.StockIn)
+                                        {
+                                            <span class="badge bg-success">Stock In</span>
+                                        }
+                                        else if (tx.TransactionType == TransactionType.StockOut)
+                                        {
+                                            <span class="badge bg-warning text-dark">Stock Out</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-info text-dark">Adjustment</span>
+                                        }
+                                    </td>
+                                    <td class="text-end @(tx.QuantityChanged >= 0 ? "text-success" : "text-danger")">
+                                        @(tx.QuantityChanged > 0 ? "+" : string.Empty)@tx.QuantityChanged
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card table-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">Stock Health</h5>
+            </div>
+            <div class="card-body">
+                @{
+                    var total = Math.Max(1, Model.Summary.TotalProducts);
+                    var inStock = Model.Summary.TotalProducts - Model.Summary.LowStockProducts - Model.Summary.OutOfStockProducts;
+                    var lowPct = Model.Summary.LowStockProducts * 100.0 / total;
+                    var outPct = Model.Summary.OutOfStockProducts * 100.0 / total;
+                    var inPct = inStock * 100.0 / total;
+                }
+                <p class="mb-1"><strong>In Stock</strong> <span class="float-end">@inStock</span></p>
+                <div class="progress mb-3" style="height: 8px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: @inPct%"></div>
+                </div>
+                <p class="mb-1"><strong>Low Stock</strong> <span class="float-end">@Model.Summary.LowStockProducts</span></p>
+                <div class="progress mb-3" style="height: 8px;">
+                    <div class="progress-bar bg-warning" role="progressbar" style="width: @lowPct%"></div>
+                </div>
+                <p class="mb-1"><strong>Out of Stock</strong> <span class="float-end">@Model.Summary.OutOfStockProducts</span></p>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-danger" role="progressbar" style="width: @outPct%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,132 @@
+@model InventoryManagement.Web.ViewModels.ProductIndexViewModel
+@{
+    ViewData["Title"] = "Products";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-1">Products</h1>
+        <p class="text-muted mb-0">Manage your inventory products.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Create"><i class="bi bi-plus-circle me-1"></i>New Product</a>
+</div>
+
+<div class="card table-card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Search</label>
+                <input type="text" name="searchTerm" value="@Model.SearchTerm" class="form-control" placeholder="Name or SKU..." />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Category</label>
+                <select name="categoryId" class="form-select" asp-items="@(new SelectList(Model.Categories, "Value", "Text", Model.CategoryId))">
+                    <option value="">All Categories</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Stock Status</label>
+                <select name="stockStatus" class="form-select">
+                    <option value="">All</option>
+                    <option value="InStock" selected="@(Model.StockStatus == "InStock")">In Stock</option>
+                    <option value="LowStock" selected="@(Model.StockStatus == "LowStock")">Low Stock</option>
+                    <option value="OutOfStock" selected="@(Model.StockStatus == "OutOfStock")">Out of Stock</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-outline-primary flex-grow-1"><i class="bi bi-search"></i></button>
+                <a asp-action="Index" class="btn btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card table-card">
+    <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th class="text-end">Price</th>
+                    <th class="text-end">Quantity</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!Model.Result.Items.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">No products found.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var product in Model.Result.Items)
+                    {
+                        var status = product.Quantity == 0 ? StockStatus.OutOfStock
+                            : product.Quantity <= product.LowStockThreshold ? StockStatus.LowStock
+                            : StockStatus.InStock;
+                        <tr>
+                            <td>
+                                <a asp-action="Details" asp-route-id="@product.ProductId" class="fw-semibold text-decoration-none">@product.ProductName</a>
+                            </td>
+                            <td><span class="text-muted">@product.SKU</span></td>
+                            <td>@product.CategoryName</td>
+                            <td class="text-end">@product.Price.ToString("C")</td>
+                            <td class="text-end">@product.Quantity</td>
+                            <td>
+                                @switch (status)
+                                {
+                                    case StockStatus.OutOfStock:
+                                        <span class="badge bg-danger">Out of Stock</span>
+                                        break;
+                                    case StockStatus.LowStock:
+                                        <span class="badge bg-warning text-dark">Low Stock</span>
+                                        break;
+                                    default:
+                                        <span class="badge bg-success">In Stock</span>
+                                        break;
+                                }
+                            </td>
+                            <td class="text-end">
+                                <a asp-action="Details" asp-route-id="@product.ProductId" class="btn btn-sm btn-outline-secondary" title="Details"><i class="bi bi-eye"></i></a>
+                                <a asp-action="Edit" asp-route-id="@product.ProductId" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                <a asp-action="Delete" asp-route-id="@product.ProductId" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></a>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.Result.TotalCount > 0)
+    {
+        <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                Showing @(((Model.Result.PageNumber - 1) * Model.Result.PageSize) + 1) -
+                @(Math.Min(Model.Result.PageNumber * Model.Result.PageSize, Model.Result.TotalCount))
+                of @Model.Result.TotalCount
+            </div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(Model.Result.HasPrevious ? null : "disabled")">
+                        <a class="page-link" asp-action="Index" asp-route-searchTerm="@Model.SearchTerm" asp-route-categoryId="@Model.CategoryId" asp-route-stockStatus="@Model.StockStatus" asp-route-pageNumber="@(Model.Result.PageNumber - 1)" asp-route-pageSize="@Model.Result.PageSize">Previous</a>
+                    </li>
+                    @for (var i = 1; i <= Model.Result.TotalPages; i++)
+                    {
+                        <li class="page-item @(i == Model.Result.PageNumber ? "active" : null)">
+                            <a class="page-link" asp-action="Index" asp-route-searchTerm="@Model.SearchTerm" asp-route-categoryId="@Model.CategoryId" asp-route-stockStatus="@Model.StockStatus" asp-route-pageNumber="@i" asp-route-pageSize="@Model.Result.PageSize">@i</a>
+                        </li>
+                    }
+                    <li class="page-item @(Model.Result.HasNext ? null : "disabled")">
+                        <a class="page-link" asp-action="Index" asp-route-searchTerm="@Model.SearchTerm" asp-route-categoryId="@Model.CategoryId" asp-route-stockStatus="@Model.StockStatus" asp-route-pageNumber="@(Model.Result.PageNumber + 1)" asp-route-pageSize="@Model.Result.PageSize">Next</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    }
+</div>

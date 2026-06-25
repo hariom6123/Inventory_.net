@@ -1,0 +1,50 @@
+@model InventoryManagement.Application.DTOs.InventoryTransactionDto
+@{
+    ViewData["Title"] = "Stock Out";
+    var products = (List<SelectListItem>)(ViewBag.Products ?? new List<SelectListItem>());
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-controller="Inventory" asp-action="History">Inventory</a></li>
+        <li class="breadcrumb-item active">Stock Out</li>
+    </ol>
+</nav>
+
+<div class="card table-card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">Stock Out</h5>
+    </div>
+    <div class="card-body">
+        <form asp-action="StockOut" method="post">
+            <input type="hidden" asp-for="TransactionType" value="@TransactionType.StockOut" />
+            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label asp-for="ProductId" class="form-label"></label>
+                    <select asp-for="ProductId" class="form-select" asp-items="products">
+                        <option value="">Select a product...</option>
+                    </select>
+                    <span asp-validation-for="ProductId" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Quantity" class="form-label"></label>
+                    <input asp-for="Quantity" type="number" min="1" class="form-control" />
+                    <span asp-validation-for="Quantity" class="text-danger small"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Notes" class="form-label"></label>
+                    <textarea asp-for="Notes" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-dash-circle me-1"></i>Record Stock Out</button>
+                <a asp-action="History" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

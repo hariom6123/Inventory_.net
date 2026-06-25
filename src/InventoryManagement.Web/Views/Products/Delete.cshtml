@@ -1,0 +1,35 @@
+@model InventoryManagement.Application.DTOs.ProductDto
+@{
+    ViewData["Title"] = "Delete Product";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-action="Index">Products</a></li>
+        <li class="breadcrumb-item active">Delete</li>
+    </ol>
+</nav>
+
+<div class="card table-card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0 text-danger">Delete Product</h5>
+    </div>
+    <div class="card-body">
+        <p>Are you sure you want to delete the following product?</p>
+        <dl class="row">
+            <dt class="col-sm-3">Name</dt>
+            <dd class="col-sm-9">@Model.ProductName</dd>
+            <dt class="col-sm-3">SKU</dt>
+            <dd class="col-sm-9">@Model.SKU</dd>
+            <dt class="col-sm-3">Price</dt>
+            <dd class="col-sm-9">@Model.Price.ToString("C")</dd>
+            <dt class="col-sm-3">Quantity</dt>
+            <dd class="col-sm-9">@Model.Quantity</dd>
+        </dl>
+        <form asp-action="Delete" method="post">
+            <input type="hidden" asp-for="ProductId" />
+            <button type="submit" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Delete</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,50 @@
+@model IEnumerable<InventoryManagement.Application.DTOs.CategoryDto>
+@{
+    ViewData["Title"] = "Categories";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-1">Categories</h1>
+        <p class="text-muted mb-0">Organize products by category.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Create"><i class="bi bi-plus-circle me-1"></i>New Category</a>
+</div>
+
+<div class="card table-card">
+    <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th class="text-end">Products</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!Model.Any())
+                {
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-5">No categories found.</td>
+                    </tr>
+                }
+                else
+                {
+                    foreach (var category in Model)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@category.CategoryName</td>
+                            <td>@category.Description</td>
+                            <td class="text-end"><span class="badge bg-secondary">@category.ProductCount</span></td>
+                            <td class="text-end">
+                                <a asp-action="Edit" asp-route-id="@category.CategoryId" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil"></i></a>
+                                <a asp-action="Delete" asp-route-id="@category.CategoryId" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></a>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

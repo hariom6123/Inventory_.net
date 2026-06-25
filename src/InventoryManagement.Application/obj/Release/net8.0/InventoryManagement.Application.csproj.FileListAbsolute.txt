@@ -1,0 +1,15 @@
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.csproj.AssemblyReference.cache
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.AssemblyInfoInputs.cache
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.AssemblyInfo.cs
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.csproj.CoreCompileInputs.cache
+C:\Inventory_.net\src\InventoryManagement.Application\bin\Release\net8.0\InventoryManagement.Application.deps.json
+C:\Inventory_.net\src\InventoryManagement.Application\bin\Release\net8.0\InventoryManagement.Application.dll
+C:\Inventory_.net\src\InventoryManagement.Application\bin\Release\net8.0\InventoryManagement.Application.pdb
+C:\Inventory_.net\src\InventoryManagement.Application\bin\Release\net8.0\InventoryManagement.Domain.dll
+C:\Inventory_.net\src\InventoryManagement.Application\bin\Release\net8.0\InventoryManagement.Domain.pdb
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\Inventor.0D5EB3FB.Up2Date
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.dll
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\refint\InventoryManagement.Application.dll
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\InventoryManagement.Application.pdb
+C:\Inventory_.net\src\InventoryManagement.Application\obj\Release\net8.0\ref\InventoryManagement.Application.dll
