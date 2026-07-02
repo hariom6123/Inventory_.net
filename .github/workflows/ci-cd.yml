@@ -4,10 +4,11 @@
 # Stages:
 #   1. Build              — restore + compile the .NET 8 solution
 #   2. Unit Tests         — run xUnit suite with code coverage
-#   3. Trivy FS Scan      — static filesystem vulnerability scan
-#   4. Docker Build       — multi-stage Docker image build + push to GHCR
-#   5. Trivy Image Scan   — vulnerability scan of the built image
-#   6. Publish Artifact   — final aggregated release artifact
+#   3. SonarCloud Scan    — code quality analysis
+#   4. Trivy FS Scan      — static filesystem vulnerability scan
+#   5. Docker Build       — multi-stage Docker image build + push to GHCR
+#   6. Trivy Image Scan   — vulnerability scan of the built image
+#   7. Publish Artifact   — final aggregated release artifact
 # ==============================================================================
 
 name: CI/CD Pipeline
@@ -39,7 +40,6 @@ env:
   PROJECT:        src/InventoryManagement.Web/InventoryManagement.Web.csproj
   IMAGE_NAME:     inventorymanagement
   REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/inventorymanagement
-
   SONAR_PROJECT_KEY: hariom6123_Inventory_.net
   SONAR_ORGANIZATION: hariom6123
 
@@ -155,90 +155,88 @@ jobs:
           path: '**/coverage.cobertura.xml'
           if-no-files-found: warn
           retention-days: 7
-          
-# ---------------------------------------------------------------------------
-# 3. SonarCloud Code Quality Analysis
-# ---------------------------------------------------------------------------
-sonarqube:
-  name: 3️⃣ SonarCloud Analysis
-  runs-on: ubuntu-latest
-  needs: [ unit-tests ]
-  timeout-minutes: 20
 
-  steps:
+  # ---------------------------------------------------------------------------
+  # 3. SonarCloud Code Quality Analysis
+  # ---------------------------------------------------------------------------
+  sonarqube:
+    name: 3️⃣ SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: [ unit-tests ]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
-    - name: Cache NuGet packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: |
+            ${{ runner.os }}-sonar
 
-    - name: Cache SonarCloud packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.sonar/cache
-        key: ${{ runner.os }}-sonar
-        restore-keys: |
-          ${{ runner.os }}-sonar
+      - name: Install SonarScanner
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
-    - name: Install SonarScanner
-      run: |
-        dotnet tool install --global dotnet-sonarscanner
-        echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
 
-    - name: Restore
-      run: dotnet restore ${{ env.SOLUTION }}
+      - name: Begin SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"${{ env.SONAR_PROJECT_KEY }}" \
+            /o:"${{ env.SONAR_ORGANIZATION }}" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.cs.vstest.reportsPaths="**/*.trx" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
 
-    - name: Begin SonarCloud Analysis
-      env:
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      run: |
-        dotnet sonarscanner begin \
-          /k:"${{ env.SONAR_PROJECT_KEY }}" \
-          /o:"${{ env.SONAR_ORGANIZATION }}" \
-          /d:sonar.host.url="https://sonarcloud.io" \
-          /d:sonar.token="${SONAR_TOKEN}" \
-          /d:sonar.cs.vstest.reportsPaths="**/*.trx" \
-          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+      - name: Build
+        run: |
+          dotnet build ${{ env.SOLUTION }} \
+            --configuration Release \
+            --no-restore
 
-    - name: Build
-      run: |
-        dotnet build ${{ env.SOLUTION }} \
-          --configuration Release \
-          --no-restore
+      - name: Test
+        run: |
+          dotnet test ${{ env.SOLUTION }} \
+            --configuration Release \
+            --no-build \
+            --collect:"XPlat Code Coverage" \
+            --logger "trx"
 
-    - name: Test
-      run: |
-        dotnet test ${{ env.SOLUTION }} \
-          --configuration Release \
-          --no-build \
-          --collect:"XPlat Code Coverage" \
-          --logger "trx"
-
-    - name: End SonarCloud Analysis
-      env:
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      run: |
-        dotnet sonarscanner end \
-          /d:sonar.token="${SONAR_TOKEN}"        
+      - name: End SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner end \
+            /d:sonar.token="${SONAR_TOKEN}"
 
   # ---------------------------------------------------------------------------
   # 4. Trivy Filesystem Scan
   # ---------------------------------------------------------------------------
   trivy-fs-scan:
-    name: 3️⃣ Trivy FS Scan
+    name: 4️⃣ Trivy FS Scan
     runs-on: ubuntu-latest
     needs: [ sonarqube ]
     timeout-minutes: 10
@@ -257,7 +255,6 @@ sonarqube:
           exit-code:    '0'
           ignore-unfixed: true
 
-      # ── Generate NuGet Vulnerability Report (input for Agent 1) ──────────
       - name: Setup .NET ${{ env.DOTNET_VERSION }}
         uses: actions/setup-dotnet@v4
         with:
@@ -270,9 +267,6 @@ sonarqube:
           dotnet list ${{ env.SOLUTION }} package --vulnerable --include-transitive > nuget-report.txt 2>&1 || true
           echo "NuGet report generated. Size: $(wc -c < nuget-report.txt) bytes"
 
-      # ── 🤖 AGENT 1: Dependency Vulnerability Analyst (NVIDIA NIM) ─────────
-      # Reads the NuGet vulnerability report and produces a
-      # prioritized, human-readable risk summary with fix advice.
       - name: Agent 1 - Dependency Vulnerability Analyst
         env:
           NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
@@ -288,7 +282,7 @@ sonarqube:
               max_tokens: 1024,
               messages: [{
                 role: "user",
-                content: ("You are a .NET security expert. Analyze this NuGet dependency report for the Inventory Management System project and:\n1. List any outdated or vulnerable packages, categorizing each by severity (CRITICAL / HIGH / MEDIUM / LOW)\n2. Recommend the exact version to upgrade to for each vulnerable package\n3. Flag any that could affect authentication, data handling, or API security\n4. Give an overall dependency risk score out of 10\n\nKeep the response concise and actionable. If no vulnerabilities are found, state that clearly.\n\nReport:\n" + $report)
+                content: ("You are a .NET security expert. Analyze this NuGet dependency report for the Inventory Management System project and:\n1. List any outdated or vulnerable packages, categorized by severity.\n2. Provide remediation steps for HIGH and CRITICAL packages.\n3. Suggest best practices for dependency management.")
               }]
             }')
 
@@ -303,7 +297,6 @@ sonarqube:
           echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"'
           echo "──────────────────────────────────────────"
 
-          # Save report for summary
           echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > agent1-report.txt
 
       - name: Upload Agent 1 report
@@ -346,7 +339,7 @@ sonarqube:
   # 5. Docker Build
   # ---------------------------------------------------------------------------
   docker-build:
-    name: 4️⃣ Docker Build
+    name: 5️⃣ Docker Build
     runs-on: ubuntu-latest
     needs: [ trivy-fs-scan ]
     timeout-minutes: 20
@@ -410,7 +403,7 @@ sonarqube:
   # 6. Trivy Image Scan
   # ---------------------------------------------------------------------------
   trivy-image-scan:
-    name: 5️⃣ Trivy Image Scan
+    name: 6️⃣ Trivy Image Scan
     runs-on: ubuntu-latest
     needs: [ docker-build ]
     timeout-minutes: 10
@@ -427,11 +420,6 @@ sonarqube:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy image scan (table)
-        # Scan the image from GHCR. We pin the ref to `main` (the
-        # metadata-action 'type=ref,event=branch' tag), which the
-        # docker-build job always pushes for push events. Avoid
-        # ${{ github.sha }} here — the metadata-action's long-SHA
-        # tag has a 'sha-' prefix and is not equal to github.sha.
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref:    ${{ env.REGISTRY_IMAGE }}:main
@@ -471,7 +459,7 @@ sonarqube:
   # 7. Publish Artifact — final aggregated artifact step
   # ---------------------------------------------------------------------------
   publish-artifact:
-    name: 6️⃣ Publish Artifact
+    name: 7️⃣ Publish Artifact
     runs-on: ubuntu-latest
     needs: [ trivy-image-scan ]
     if: success()
@@ -485,6 +473,7 @@ sonarqube:
             echo ""
             echo "- **Build:** ✅ SUCCESS"
             echo "- **Unit Tests:** ✅ PASSED"
+            echo "- **SonarCloud Analysis:** ✅ COMPLETED"
             echo "- **Trivy FS Scan:** ✅ COMPLETED"
             echo "- **Docker Build:** ✅ SUCCESS"
             echo "- **Trivy Image Scan:** ✅ COMPLETED"
@@ -503,10 +492,11 @@ sonarqube:
             echo ""
             echo "1. **Build** — restore + compile .NET 8 solution"
             echo "2. **Unit Tests** — xUnit with code coverage"
-            echo "3. **Trivy FS Scan** — filesystem vulnerability scan"
-            echo "4. **Docker Build** — multi-stage build + push to GHCR"
-            echo "5. **Trivy Image Scan** — image vulnerability scan"
-            echo "6. **Publish Artifact** — aggregated release output"
+            echo "3. **SonarCloud Analysis** — code quality & coverage"
+            echo "4. **Trivy FS Scan** — filesystem vulnerability scan"
+            echo "5. **Docker Build** — multi-stage build + push to GHCR"
+            echo "6. **Trivy Image Scan** — image vulnerability scan"
+            echo "7. **Publish Artifact** — aggregated release output"
           } > artifact-reports/SUMMARY.md
 
       - name: Upload final artifact bundle
