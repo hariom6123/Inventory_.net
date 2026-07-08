@@ -39,9 +39,13 @@ on:
       image_tag:
         description: 'Tag string produced by docker/metadata-action'
         value: ${{ jobs.docker-build.outputs.image_tag }}
-    secrets:
-      GITHUB_TOKEN:
-        required: true
+    # NOTE: GITHUB_TOKEN is auto-injected by GitHub Actions at runtime
+    # and cannot be declared in `workflow_call.secrets` (it's a reserved
+    # system name). The caller still uses `secrets: inherit` — that
+    # propagates every repo secret, and GITHUB_TOKEN is always present
+    # on every job regardless. We reference it as `${{ secrets.GITHUB_TOKEN }}`
+    # in the `docker/login-action` step below, which works because the
+    # auto-injected value is what the runner sees.
 
 jobs:
   docker-build:

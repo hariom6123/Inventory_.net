@@ -24,9 +24,11 @@ on:
         description: 'Tag emitted by the docker-build workflow'
         required: true
         type: string
-    secrets:
-      GITHUB_TOKEN:
-        required: true
+    # NOTE: GITHUB_TOKEN is auto-injected by GitHub Actions at runtime
+    # and cannot be declared in `workflow_call.secrets` (it's a reserved
+    # system name). The caller still uses `secrets: inherit` — GITHUB_TOKEN
+    # is always present on every job regardless, and is what the
+    # `docker/login-action` step references as `${{ secrets.GITHUB_TOKEN }}`.
 
 jobs:
   trivy-image-scan:
