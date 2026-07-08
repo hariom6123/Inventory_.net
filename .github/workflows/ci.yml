@@ -73,8 +73,8 @@ jobs:
     needs: [ unit-test ]
     uses: ./.github/workflows/devsecops/sonarcloud.yml
     with:
-      project-key: ${{ env.SONAR_PROJECT_KEY }}
-      organization: ${{ env.SONAR_ORGANIZATION }}
+      project-key: hariom6123_Inventory_.net
+      organization: hariom6123
     secrets: inherit
 
   # 🤖 Agent 1 — Code Quality Security Gate
@@ -83,7 +83,7 @@ jobs:
     needs: [ sonarcloud ]
     uses: ./.github/workflows/ai/quality-gate.yml
     with:
-      project-key: ${{ env.SONAR_PROJECT_KEY }}
+      project-key: hariom6123_Inventory_.net
     secrets: inherit
 
   # 4️⃣ Trivy Filesystem Scan
@@ -98,8 +98,8 @@ jobs:
     needs: [ trivy-fs ]
     uses: ./.github/workflows/devsecops/docker-build.yml
     with:
-      registry-image: ${{ env.REGISTRY_IMAGE }}
-      local-image-name: ${{ env.IMAGE_NAME }}
+      registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
+      local-image-name: inventorymanagement
     secrets: inherit
 
   # 6️⃣ Trivy Image Scan
@@ -108,7 +108,7 @@ jobs:
     needs: [ docker-build ]
     uses: ./.github/workflows/devsecops/trivy-image.yml
     with:
-      registry-image: ${{ env.REGISTRY_IMAGE }}
+      registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
       image-tag: ${{ needs.docker-build.outputs.image_tag }}
     secrets: inherit
 
@@ -119,4 +119,5 @@ jobs:
     if: always()
     uses: ./.github/workflows/devsecops/publish.yml
     with:
-      registry-image: ${{ env.REGISTRY_IMAGE }}
+      registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
+    secrets: inherit
