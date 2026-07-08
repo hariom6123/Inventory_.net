@@ -1,0 +1,110 @@
+# ==============================================================================
+# DevSecOps — SonarCloud Code Quality Analysis
+# ------------------------------------------------------------------------------
+# Runs dotnet-sonarscanner begin → build → test → end. Consumes the test
+# reports and coverage produced by the unit-test workflow. The downstream
+# AI quality gate reads the quality gate JSON via the SonarCloud API rather
+# than parsing scanner output.
+# ==============================================================================
+
+name: 3️⃣ SonarCloud Analysis
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: '.NET SDK version'
+        required: false
+        type: string
+        default: '8.0.x'
+      solution:
+        description: 'Solution file path'
+        required: false
+        type: string
+        default: 'InventoryManagementSystem.sln'
+      project-key:
+        description: 'SonarCloud project key'
+        required: false
+        type: string
+        default: 'hariom6123_Inventory_.net'
+      organization:
+        description: 'SonarCloud organization'
+        required: false
+        type: string
+        default: 'hariom6123'
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+jobs:
+  sonarqube:
+    name: 3️⃣ SonarCloud Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: |
+            ${{ runner.os }}-sonar
+
+      - name: Install SonarScanner
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Restore
+        run: dotnet restore ${{ inputs.solution }}
+
+      - name: Begin SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"${{ inputs.project-key }}" \
+            /o:"${{ inputs.organization }}" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.cs.vstest.reportsPaths="**/*.trx" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+
+      - name: Build
+        run: |
+          dotnet build ${{ inputs.solution }} \
+            --configuration Release \
+            --no-restore
+
+      - name: Test
+        run: |
+          dotnet test ${{ inputs.solution }} \
+            --configuration Release \
+            --no-build \
+            --collect:"XPlat Code Coverage" \
+            --logger "trx"
+
+      - name: End SonarCloud Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner end \
+            /d:sonar.token="${SONAR_TOKEN}"

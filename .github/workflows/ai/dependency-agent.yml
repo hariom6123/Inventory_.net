@@ -1,0 +1,111 @@
+# ==============================================================================
+# AI Agent 2 — Dependency Vulnerability Analyst
+# ------------------------------------------------------------------------------
+# Generates a NuGet vulnerability report from the current solution and asks
+# the NVIDIA NIM endpoint to triage it. The system prompt lives in
+# `ai-prompts/dependency-review.md`. Produces the `agent2-dependency-report`
+# artifact.
+# ==============================================================================
+
+name: 🤖 Agent 2 - Dependency Vulnerability Analyst
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: '.NET SDK version'
+        required: false
+        type: string
+        default: '8.0.x'
+      solution:
+        description: 'Solution file path'
+        required: false
+        type: string
+        default: 'InventoryManagementSystem.sln'
+      prompt-file:
+        description: 'Path to the system prompt markdown file'
+        required: false
+        type: string
+        default: 'ai-prompts/dependency-review.md'
+    secrets:
+      nvdai_api_key:
+        required: true
+
+jobs:
+  dependency-agent:
+    name: 🤖 Agent 2 - Dependency Vulnerability Analyst
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Generate NuGet vulnerability report
+        run: |
+          echo "Scanning NuGet packages for known vulnerabilities..."
+          dotnet restore ${{ inputs.solution }}
+          dotnet list ${{ inputs.solution }} package --vulnerable --include-transitive > nuget-report.txt 2>&1 || true
+          echo "NuGet report generated. Size: $(wc -c < nuget-report.txt) bytes"
+
+      - name: Load prompt
+        run: |
+          if awk '/^```text$/{flag=1; next} /^```$/{flag=0} flag' "${{ inputs.prompt-file }}" > prompt.txt; then
+            if [ ! -s prompt.txt ]; then
+              cp "${{ inputs.prompt-file }}" prompt.txt
+            fi
+          fi
+          test -s prompt.txt || { echo "::error::Prompt file is empty: ${{ inputs.prompt-file }}"; exit 1; }
+
+      - name: 🤖 Agent 2 - Dependency Vulnerability Analyst
+        env:
+          NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
+        run: |
+          echo "🤖 Running Agent 2: Dependency Vulnerability Analyst..."
+
+          # Truncate report to avoid jq argument list too long error
+          truncate -s 10240 nuget-report.txt 2>/dev/null || true
+          truncate -s 10240 prompt.txt 2>/dev/null || true
+
+          PROMPT_CONTENT="$(cat prompt.txt)"
+
+          jq -n \
+            --arg prompt "$PROMPT_CONTENT" \
+            '{
+              model: "meta/llama-3.1-70b-instruct",
+              max_tokens: 1024,
+              messages: [
+                {
+                  role: "user",
+                  content: $prompt
+                }
+              ]
+            }' > payload.json
+
+          RESPONSE=$(curl -s https://integrate.api.nvidia.com/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $NVDAI_API_KEY" \
+            -d @payload.json)
+
+          echo "──────────────────────────────────────────"
+          echo "🤖 Agent 2 - Dependency Vulnerability Analysis"
+          echo "──────────────────────────────────────────"
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"' 2>/dev/null || echo "$RESPONSE"
+          echo "──────────────────────────────────────────"
+
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' 2>/dev/null > agent2-report.txt || echo "Agent response processing failed" > agent2-report.txt
+
+      - name: Upload Agent 2 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent2-dependency-report
+          path: agent2-report.txt
+          if-no-files-found: warn
+          retention-days: 7

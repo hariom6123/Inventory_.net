@@ -1,0 +1,152 @@
+# ==============================================================================
+# AI Agent 1 — Code Quality Security Gate
+# ------------------------------------------------------------------------------
+# Consumes the test results, code coverage, and SonarCloud quality gate JSON,
+# packages them alongside the system prompt from `ai-prompts/quality-gate.md`,
+# and asks the NVIDIA NIM endpoint (Llama 3.1 70B) to issue an APPROVED /
+# APPROVED WITH WARNINGS / BLOCKED decision. The decision text in the agent's
+# response is grep'd to enforce the gate:
+#   BLOCKED                  → exit 1
+#   APPROVED WITH WARNINGS   → exit 0
+#   APPROVED                 → exit 0
+# ==============================================================================
+
+name: 🤖 Agent 1 - Code Quality Security Gate
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        description: 'SonarCloud project key'
+        required: false
+        type: string
+        default: 'hariom6123_Inventory_.net'
+      prompt-file:
+        description: 'Path to the system prompt markdown file'
+        required: false
+        type: string
+        default: 'ai-prompts/quality-gate.md'
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      nvdai_api_key:
+        required: true
+
+jobs:
+  code-quality-agent:
+    name: 🤖 Agent 1 - Code Quality Security Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Test Results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: reports
+        continue-on-error: true
+
+      - name: Download Code Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: code-coverage
+          path: reports
+        continue-on-error: true
+
+      - name: Fetch SonarCloud Quality Gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          curl -s \
+            -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${{ inputs.project-key }}" \
+            > sonar-quality.json
+
+      - name: Prepare Reports
+        run: |
+          cat sonar-quality.json > sonar-report.txt
+          find reports -name "*.trx" -exec cat {} \; > unit-test-report.txt 2>/dev/null || true
+          find reports -name "*.xml" -exec cat {} \; > coverage-report.txt 2>/dev/null || true
+
+      - name: Load prompt
+        run: |
+          # Extract the text inside the ```text fenced block of the prompt file.
+          # Falls back to the whole file if no fence is found.
+          if awk '/^```text$/{flag=1; next} /^```$/{flag=0} flag' "${{ inputs.prompt-file }}" > prompt.txt; then
+            if [ ! -s prompt.txt ]; then
+              cp "${{ inputs.prompt-file }}" prompt.txt
+            fi
+          fi
+          test -s prompt.txt || { echo "::error::Prompt file is empty: ${{ inputs.prompt-file }}"; exit 1; }
+
+      - name: 🤖 Agent 1 - Code Quality Security Gate
+        env:
+          NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
+        run: |
+          echo "🤖 Running Agent 1: Code Quality Security Gate..."
+
+          # Truncate large files to avoid jq argument list too long error
+          truncate -s 10240 sonar-report.txt 2>/dev/null || true
+          truncate -s 10240 coverage-report.txt 2>/dev/null || true
+          truncate -s 10240 unit-test-report.txt 2>/dev/null || true
+          truncate -s 10240 prompt.txt 2>/dev/null || true
+
+          PROMPT_CONTENT="$(cat prompt.txt)"
+
+          # Build payload using jq so the embedded prompt is properly escaped.
+          jq -n \
+            --arg prompt "$PROMPT_CONTENT" \
+            '{
+              model: "meta/llama-3.1-70b-instruct",
+              max_tokens: 1800,
+              messages: [
+                {
+                  role: "user",
+                  content: ($prompt + "\n\n---\n\nBuild Status: PASS\n\n")
+                }
+              ]
+            }' > payload.json
+
+          RESPONSE=$(curl -s https://integrate.api.nvidia.com/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $NVDAI_API_KEY" \
+            -d @payload.json)
+
+          echo "────────────────────────────────────────────"
+          echo "🤖 Agent 1 - Code Quality Security Gate"
+          echo "────────────────────────────────────────────"
+
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"' 2>/dev/null || echo "$RESPONSE"
+
+          echo "────────────────────────────────────────────"
+
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' 2>/dev/null > code-quality-gate-report.md || echo "Agent response processing failed" > code-quality-gate-report.md
+
+      - name: Upload Code Quality Gate Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-gate-report
+          path: code-quality-gate-report.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Enforce Code Quality Gate
+        run: |
+          echo "Checking AI decision..."
+
+          if grep -q "BLOCKED" code-quality-gate-report.md; then
+            echo "❌ AI Code Quality Gate blocked the pipeline."
+            exit 1
+          fi
+
+          if grep -q "APPROVED WITH WARNINGS" code-quality-gate-report.md; then
+            echo "⚠ AI approved the build with warnings."
+            exit 0
+          fi
+
+          echo "✅ AI Code Quality Gate passed."

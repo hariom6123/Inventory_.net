@@ -1,0 +1,75 @@
+# ==============================================================================
+# DevSecOps — Unit Tests
+# ------------------------------------------------------------------------------
+# Runs the xUnit suite with code coverage, publishes TRX test results and
+# Cobertura coverage as the `test-results` and `code-coverage` artifacts for
+# SonarCloud and the AI quality gate downstream.
+# ==============================================================================
+
+name: 2️⃣ Unit Tests
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: '.NET SDK version'
+        required: false
+        type: string
+        default: '8.0.x'
+      solution:
+        description: 'Solution file path'
+        required: false
+        type: string
+        default: 'InventoryManagementSystem.sln'
+
+jobs:
+  unit-tests:
+    name: 2️⃣ Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET ${{ inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ inputs.solution }}
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test ${{ inputs.solution }} \
+            --configuration Release \
+            --no-restore \
+            --logger "trx;LogFileName=test-results.trx" \
+            --logger "console;verbosity=normal" \
+            --collect:"XPlat Code Coverage"
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/TestResults/**/*.trx'
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publish code coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage
+          path: '**/coverage.cobertura.xml'
+          if-no-files-found: warn
+          retention-days: 7

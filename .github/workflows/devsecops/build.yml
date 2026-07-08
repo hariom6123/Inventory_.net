@@ -1,0 +1,78 @@
+# ==============================================================================
+# DevSecOps — Build
+# ------------------------------------------------------------------------------
+# Restores + compiles the .NET 8 solution in Release mode, publishes the web
+# project, and uploads the output as the `webapp-publish` artifact for the
+# downstream Docker build step.
+# ==============================================================================
+
+name: 1️⃣ Build
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: '.NET SDK version'
+        required: false
+        type: string
+        default: '8.0.x'
+      solution:
+        description: 'Solution file path'
+        required: false
+        type: string
+        default: 'InventoryManagementSystem.sln'
+      project:
+        description: 'Web project path'
+        required: false
+        type: string
+        default: 'src/InventoryManagement.Web/InventoryManagement.Web.csproj'
+      publish-dir:
+        description: 'Output directory for `dotnet publish`'
+        required: false
+        type: string
+        default: 'publish'
+
+jobs:
+  build:
+    name: 1️⃣ Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET ${{ inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ inputs.solution }}
+
+      - name: Build (Release)
+        run: dotnet build ${{ inputs.solution }} --configuration Release --no-restore
+
+      - name: Publish web project
+        run: >
+          dotnet publish ${{ inputs.project }}
+          --configuration Release
+          --no-build
+          --output ${{ inputs.publish-dir }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-publish
+          path: ${{ inputs.publish-dir }}/
+          if-no-files-found: error
+          retention-days: 7
