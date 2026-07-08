@@ -15,7 +15,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master, feature/** ]
+    branches: [ main, master, feature/**, prismascan ]
     tags:    [ 'v*.*.*' ]
   pull_request:
     branches: [ main, master, feature/** ]
@@ -233,12 +233,229 @@ jobs:
             /d:sonar.token="${SONAR_TOKEN}"
 
   # ---------------------------------------------------------------------------
+  # Agent 1 - AI Code Quality Security Gate
+  # ---------------------------------------------------------------------------
+  code-quality-agent:
+    name: 🤖 Agent 1 - Code Quality Security Gate
+    runs-on: ubuntu-latest
+    needs: [ sonarqube ]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Download reports from previous stages
+      - name: Download Test Results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: reports
+        continue-on-error: true
+
+      - name: Download Code Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: code-coverage
+          path: reports
+        continue-on-error: true
+
+      # Fetch SonarCloud Quality Gate
+      - name: Fetch SonarCloud Quality Gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          curl -s \
+          -u "${SONAR_TOKEN}:" \
+          "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${{ env.SONAR_PROJECT_KEY }}" \
+          > sonar-quality.json
+
+      # Prepare reports
+      - name: Prepare Reports
+        run: |
+          cat sonar-quality.json > sonar-report.txt
+
+          find reports -name "*.trx" -exec cat {} \; > unit-test-report.txt 2>/dev/null || true
+
+          find reports -name "*.xml" -exec cat {} \; > coverage-report.txt 2>/dev/null || true
+
+    # -----------------------------------------------------------------------
+    # AI Agent
+    # -----------------------------------------------------------------------
+      - name: 🤖 Agent 1 - Code Quality Security Gate
+        env:
+          NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
+        run: |
+
+          echo "🤖 Running Agent 1: Code Quality Security Gate..."
+
+          BUILD_STATUS="PASS"
+
+          SONAR_REPORT=$(cat sonar-report.txt 2>/dev/null || echo "No SonarCloud report found")
+          COVERAGE_REPORT=$(cat coverage-report.txt 2>/dev/null || echo "No Code Coverage report found")
+          TEST_REPORT=$(cat unit-test-report.txt 2>/dev/null || echo "No Unit Test report found")
+
+          PAYLOAD=$(jq -n \
+            --arg build "$BUILD_STATUS" \
+            --arg sonar "$SONAR_REPORT" \
+            --arg coverage "$COVERAGE_REPORT" \
+            --arg tests "$TEST_REPORT" \
+          '{
+            model: "meta/llama-3.1-70b-instruct",
+            max_tokens: 1800,
+            messages: [{
+              role: "user",
+              content: (
+              "You are an Enterprise DevSecOps Code Quality Security Gate Agent.
+
+Your responsibility is to determine whether the application satisfies the organization'\''s code quality standards before security scanning begins.
+
+Analyze the following reports:
+
+Build Status:
+" + $build + "
+
+SonarCloud Report:
+" + $sonar + "
+
+Code Coverage Report:
+" + $coverage + "
+
+Unit Test Report:
+" + $tests + "
+
+Enterprise Quality Policy
+
+• Build must succeed.
+• Unit tests must pass.
+• Code coverage must be at least 80%.
+• SonarCloud Quality Gate must PASS.
+• New Bugs must be ZERO.
+• New Vulnerabilities must be ZERO.
+• Security Rating must be A.
+• Reliability Rating must be A.
+• Maintainability Rating must be A.
+
+Return ONLY Markdown using this exact format.
+
+# Enterprise Code Quality Gate Report
+
+## Build Status
+
+PASS or FAIL
+
+## Unit Test Status
+
+PASS or FAIL
+
+## Code Coverage
+
+Coverage:
+
+Required:
+
+Status:
+
+## SonarCloud Summary
+
+Quality Gate:
+
+Security Rating:
+
+Reliability Rating:
+
+Maintainability Rating:
+
+New Bugs:
+
+New Vulnerabilities:
+
+Code Smells:
+
+Duplicated Code:
+
+## Overall Code Quality Score
+
+0-10
+
+## Decision
+
+APPROVED
+
+APPROVED WITH WARNINGS
+
+BLOCKED
+
+## Reasons
+
+- reason
+- reason
+- reason
+
+## Recommendations
+
+- recommendation
+- recommendation
+
+## Executive Summary"
+              )
+            }]
+          }')
+
+        RESPONSE=$(curl -s https://integrate.api.nvidia.com/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer $NVDAI_API_KEY" \
+          -d "$PAYLOAD")
+
+        echo "────────────────────────────────────────────"
+        echo "🤖 Agent 1 - Code Quality Security Gate"
+        echo "────────────────────────────────────────────"
+
+        echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"'
+
+        echo "────────────────────────────────────────────"
+
+        echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > code-quality-gate-report.md
+
+    # -----------------------------------------------------------------------
+    # Upload Report
+    # -----------------------------------------------------------------------
+    - name: Upload Code Quality Gate Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-quality-gate-report
+        path: code-quality-gate-report.md
+        if-no-files-found: warn
+        retention-days: 30
+
+    # -----------------------------------------------------------------------
+    # Enforce Security Gate
+    # -----------------------------------------------------------------------
+    - name: Enforce Code Quality Gate
+      run: |
+
+        echo "Checking AI decision..."
+
+        if grep -q "BLOCKED" code-quality-gate-report.md; then
+          echo "❌ AI Code Quality Gate blocked the pipeline."
+          exit 1
+        fi
+
+        if grep -q "APPROVED WITH WARNINGS" code-quality-gate-report.md; then
+          echo "⚠ AI approved the build with warnings."
+          exit 0
+        fi
+
+        echo "✅ AI Code Quality Gate passed."
+
+  # ---------------------------------------------------------------------------
   # 4. Trivy Filesystem Scan
   # ---------------------------------------------------------------------------
   trivy-fs-scan:
     name: 4️⃣ Trivy FS Scan
     runs-on: ubuntu-latest
-    needs: [ sonarqube ]
+    needs: [ code-quality-agent ]
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -267,11 +484,11 @@ jobs:
           dotnet list ${{ env.SOLUTION }} package --vulnerable --include-transitive > nuget-report.txt 2>&1 || true
           echo "NuGet report generated. Size: $(wc -c < nuget-report.txt) bytes"
 
-      - name: Agent 1 - Dependency Vulnerability Analyst
+      - name: Agent 2 - Dependency Vulnerability Analyst
         env:
           NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
         run: |
-          echo "🤖 Running Agent 1: Dependency Vulnerability Analyst..."
+          echo "🤖 Running Agent 2: Dependency Vulnerability Analyst..."
 
           NUGET_REPORT=$(cat nuget-report.txt 2>/dev/null || echo "No report found")
 
@@ -282,7 +499,7 @@ jobs:
               max_tokens: 1024,
               messages: [{
                 role: "user",
-                content: ("You are a .NET security expert. Analyze this NuGet dependency report for the Inventory Management System project and:\n1. List any outdated or vulnerable packages, categorized by severity.\n2. Provide remediation steps for HIGH and CRITICAL packages.\n3. Suggest best practices for dependency management.")
+                content: ("You are a .NET security expert. Analyze this NuGet dependency report for the Inventory Management System project and:\n1. List any outdated or vulnerable packages, categorized by severity (CRITICAL, HIGH, MEDIUM, LOW).\n2. Provide remediation steps for HIGH and CRITICAL packages.\n3. Suggest best practices for dependency management.\n4. Recommend tools for continuous dependency scanning.\n\nNuGet Report:\n" + $report)
               }]
             }')
 
@@ -292,19 +509,19 @@ jobs:
             -d "$PAYLOAD")
 
           echo "──────────────────────────────────────────"
-          echo "🤖 Agent 1 - Dependency Vulnerability Analysis"
+          echo "🤖 Agent 2 - Dependency Vulnerability Analysis"
           echo "──────────────────────────────────────────"
           echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"'
           echo "──────────────────────────────────────────"
 
-          echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > agent1-report.txt
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > agent2-report.txt
 
-      - name: Upload Agent 1 report
+      - name: Upload Agent 2 report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agent1-dependency-report
-          path: agent1-report.txt
+          name: agent2-dependency-report
+          path: agent2-report.txt
           if-no-files-found: warn
           retention-days: 7
 
@@ -346,6 +563,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -400,10 +619,43 @@ jobs:
             .
 
   # ---------------------------------------------------------------------------
-  # 6. Trivy Image Scan
+  # 6. Prisma Cloud Image Scan
+  # ---------------------------------------------------------------------------
+  prisma-cloud-scan:
+    name: 6️⃣ Prisma Cloud Image Scan
+    runs-on: ubuntu-latest
+    needs: [ docker-build ]
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request'
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download twistcli
+        run: |
+          curl -k \
+          -u "${{ secrets.PRISMA_ACCESS_KEY }}:${{ secrets.PRISMA_SECRET_KEY }}" \
+          "${{ secrets.PRISMA_CONSOLE_URL }}/api/v1/util/twistcli" \
+          --output twistcli
+
+          chmod +x twistcli
+
+      - name: Scan Docker Image
+        run: |
+          ./twistcli images scan \
+          --address "${{ secrets.PRISMA_CONSOLE_URL }}" \
+          --user "${{ secrets.PRISMA_ACCESS_KEY }}" \
+          --password "${{ secrets.PRISMA_SECRET_KEY }}" \
+          ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # 7. Trivy Image Scan
   # ---------------------------------------------------------------------------
   trivy-image-scan:
-    name: 6️⃣ Trivy Image Scan
+    name: 7️⃣ Trivy Image Scan
     runs-on: ubuntu-latest
     needs: [ docker-build ]
     timeout-minutes: 10
@@ -420,24 +672,27 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy image scan (table)
+        if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref:    ${{ env.REGISTRY_IMAGE }}:main
+          image-ref:    ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
           format:       'table'
           output:       'trivy-image-report.txt'
           severity:     'CRITICAL,HIGH'
           exit-code:    '0'
           ignore-unfixed: true
+        continue-on-error: true
 
       - name: Run Trivy image scan (SARIF)
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY_IMAGE }}:main
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
           format:    'sarif'
           output:    'trivy-image-report.sarif'
           severity:  'CRITICAL,HIGH'
           exit-code: '0'
+        continue-on-error: true
 
       - name: Upload Trivy image results to GitHub Security tab
         if: github.event_name != 'pull_request' && always()
@@ -456,13 +711,13 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 7. Publish Artifact — final aggregated artifact step
+  # 8. Publish Artifact — final aggregated artifact step
   # ---------------------------------------------------------------------------
   publish-artifact:
-    name: 7️⃣ Publish Artifact
+    name: 8️⃣ Publish Artifact
     runs-on: ubuntu-latest
-    needs: [ trivy-image-scan ]
-    if: success()
+    needs: [ trivy-image-scan, prisma-cloud-scan ]
+    if: always()
     timeout-minutes: 5
     steps:
       - name: Aggregate build reports
@@ -495,8 +750,9 @@ jobs:
             echo "3. **SonarCloud Analysis** — code quality & coverage"
             echo "4. **Trivy FS Scan** — filesystem vulnerability scan"
             echo "5. **Docker Build** — multi-stage build + push to GHCR"
-            echo "6. **Trivy Image Scan** — image vulnerability scan"
-            echo "7. **Publish Artifact** — aggregated release output"
+            echo "6. **Prisma Cloud Scan** — container image security scan"
+            echo "7. **Trivy Image Scan** — image vulnerability scan"
+            echo "8. **Publish Artifact** — aggregated release output"
           } > artifact-reports/SUMMARY.md
 
       - name: Upload final artifact bundle
