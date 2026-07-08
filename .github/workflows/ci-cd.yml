@@ -36,18 +36,18 @@ concurrency:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  SOLUTION:       InventoryManagementSystem.sln
-  PROJECT:        src/InventoryManagement.Web/InventoryManagement.Web.csproj
-  IMAGE_NAME:     inventorymanagement
+  SOLUTION: InventoryManagementSystem.sln
+  PROJECT: src/InventoryManagement.Web/InventoryManagement.Web.csproj
+  IMAGE_NAME: inventorymanagement
   REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/inventorymanagement
   SONAR_PROJECT_KEY: hariom6123_Inventory_.net
   SONAR_ORGANIZATION: hariom6123
 
 permissions:
-  contents:       read
-  packages:       write
+  contents: read
+  packages: write
   security-events: write
-  pull-requests:  write
+  pull-requests: write
 
 # ==============================================================================
 # Jobs
@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key:    ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -122,7 +122,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key:    ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -233,7 +233,7 @@ jobs:
             /d:sonar.token="${SONAR_TOKEN}"
 
   # ---------------------------------------------------------------------------
-  # Agent 1 - AI Code Quality Security Gate
+  # 4. AI Code Quality Security Gate
   # ---------------------------------------------------------------------------
   code-quality-agent:
     name: 🤖 Agent 1 - Code Quality Security Gate
@@ -245,7 +245,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Download reports from previous stages
       - name: Download Test Results
         uses: actions/download-artifact@v4
         with:
@@ -260,33 +259,25 @@ jobs:
           path: reports
         continue-on-error: true
 
-      # Fetch SonarCloud Quality Gate
       - name: Fetch SonarCloud Quality Gate
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           curl -s \
-          -u "${SONAR_TOKEN}:" \
-          "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${{ env.SONAR_PROJECT_KEY }}" \
-          > sonar-quality.json
+            -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${{ env.SONAR_PROJECT_KEY }}" \
+            > sonar-quality.json
 
-      # Prepare reports
       - name: Prepare Reports
         run: |
           cat sonar-quality.json > sonar-report.txt
-
           find reports -name "*.trx" -exec cat {} \; > unit-test-report.txt 2>/dev/null || true
-
           find reports -name "*.xml" -exec cat {} \; > coverage-report.txt 2>/dev/null || true
 
-    # -----------------------------------------------------------------------
-    # AI Agent
-    # -----------------------------------------------------------------------
       - name: 🤖 Agent 1 - Code Quality Security Gate
         env:
           NVDAI_API_KEY: ${{ secrets.nvdai_api_key }}
         run: |
-
           echo "🤖 Running Agent 1: Code Quality Security Gate..."
 
           BUILD_STATUS="PASS"
@@ -300,160 +291,62 @@ jobs:
             --arg sonar "$SONAR_REPORT" \
             --arg coverage "$COVERAGE_REPORT" \
             --arg tests "$TEST_REPORT" \
-          '{
-            model: "meta/llama-3.1-70b-instruct",
-            max_tokens: 1800,
-            messages: [{
-              role: "user",
-              content: (
-              "You are an Enterprise DevSecOps Code Quality Security Gate Agent.
+            '{
+              model: "meta/llama-3.1-70b-instruct",
+              max_tokens: 1800,
+              messages: [
+                {
+                  role: "user",
+                  content: "You are an Enterprise DevSecOps Code Quality Security Gate Agent.\n\nYour responsibility is to determine whether the application satisfies the organization'\''s code quality standards before security scanning begins.\n\nAnalyze the following reports:\n\nBuild Status:\n\($build)\n\nSonarCloud Report:\n\($sonar)\n\nCode Coverage Report:\n\($coverage)\n\nUnit Test Report:\n\($tests)\n\nEnterprise Quality Policy\n\n• Build must succeed.\n• Unit tests must pass.\n• Code coverage must be at least 80%.\n• SonarCloud Quality Gate must PASS.\n• New Bugs must be ZERO.\n• New Vulnerabilities must be ZERO.\n• Security Rating must be A.\n• Reliability Rating must be A.\n• Maintainability Rating must be A.\n\nReturn ONLY Markdown using this exact format.\n\n# Enterprise Code Quality Gate Report\n\n## Build Status\nPASS or FAIL\n\n## Unit Test Status\nPASS or FAIL\n\n## Code Coverage\nCoverage:\nRequired:\nStatus:\n\n## SonarCloud Summary\nQuality Gate:\nSecurity Rating:\nReliability Rating:\nMaintainability Rating:\nNew Bugs:\nNew Vulnerabilities:\nCode Smells:\nDuplicated Code:\n\n## Overall Code Quality Score\n0-10\n\n## Decision\nAPPROVED\nAPPROVED WITH WARNINGS\nBLOCKED\n\n## Reasons\n- reason\n- reason\n- reason\n\n## Recommendations\n- recommendation\n- recommendation\n\n## Executive Summary"
+                }
+              ]
+            }')
 
-Your responsibility is to determine whether the application satisfies the organization'\''s code quality standards before security scanning begins.
+          RESPONSE=$(curl -s https://integrate.api.nvidia.com/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $NVDAI_API_KEY" \
+            -d "$PAYLOAD")
 
-Analyze the following reports:
+          echo "────────────────────────────────────────────"
+          echo "🤖 Agent 1 - Code Quality Security Gate"
+          echo "────────────────────────────────────────────"
 
-Build Status:
-" + $build + "
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"'
 
-SonarCloud Report:
-" + $sonar + "
+          echo "────────────────────────────────────────────"
 
-Code Coverage Report:
-" + $coverage + "
+          echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > code-quality-gate-report.md
 
-Unit Test Report:
-" + $tests + "
+      - name: Upload Code Quality Gate Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-gate-report
+          path: code-quality-gate-report.md
+          if-no-files-found: warn
+          retention-days: 30
 
-Enterprise Quality Policy
+      - name: Enforce Code Quality Gate
+        run: |
+          echo "Checking AI decision..."
 
-• Build must succeed.
-• Unit tests must pass.
-• Code coverage must be at least 80%.
-• SonarCloud Quality Gate must PASS.
-• New Bugs must be ZERO.
-• New Vulnerabilities must be ZERO.
-• Security Rating must be A.
-• Reliability Rating must be A.
-• Maintainability Rating must be A.
+          if grep -q "BLOCKED" code-quality-gate-report.md; then
+            echo "❌ AI Code Quality Gate blocked the pipeline."
+            exit 1
+          fi
 
-Return ONLY Markdown using this exact format.
+          if grep -q "APPROVED WITH WARNINGS" code-quality-gate-report.md; then
+            echo "⚠ AI approved the build with warnings."
+            exit 0
+          fi
 
-# Enterprise Code Quality Gate Report
-
-## Build Status
-
-PASS or FAIL
-
-## Unit Test Status
-
-PASS or FAIL
-
-## Code Coverage
-
-Coverage:
-
-Required:
-
-Status:
-
-## SonarCloud Summary
-
-Quality Gate:
-
-Security Rating:
-
-Reliability Rating:
-
-Maintainability Rating:
-
-New Bugs:
-
-New Vulnerabilities:
-
-Code Smells:
-
-Duplicated Code:
-
-## Overall Code Quality Score
-
-0-10
-
-## Decision
-
-APPROVED
-
-APPROVED WITH WARNINGS
-
-BLOCKED
-
-## Reasons
-
-- reason
-- reason
-- reason
-
-## Recommendations
-
-- recommendation
-- recommendation
-
-## Executive Summary"
-              )
-            }]
-          }')
-
-        RESPONSE=$(curl -s https://integrate.api.nvidia.com/v1/chat/completions \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer $NVDAI_API_KEY" \
-          -d "$PAYLOAD")
-
-        echo "────────────────────────────────────────────"
-        echo "🤖 Agent 1 - Code Quality Security Gate"
-        echo "────────────────────────────────────────────"
-
-        echo "$RESPONSE" | jq -r '.choices[0].message.content // "Agent response unavailable"'
-
-        echo "────────────────────────────────────────────"
-
-        echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' > code-quality-gate-report.md
-
-    # -----------------------------------------------------------------------
-    # Upload Report
-    # -----------------------------------------------------------------------
-    - name: Upload Code Quality Gate Report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: code-quality-gate-report
-        path: code-quality-gate-report.md
-        if-no-files-found: warn
-        retention-days: 30
-
-    # -----------------------------------------------------------------------
-    # Enforce Security Gate
-    # -----------------------------------------------------------------------
-    - name: Enforce Code Quality Gate
-      run: |
-
-        echo "Checking AI decision..."
-
-        if grep -q "BLOCKED" code-quality-gate-report.md; then
-          echo "❌ AI Code Quality Gate blocked the pipeline."
-          exit 1
-        fi
-
-        if grep -q "APPROVED WITH WARNINGS" code-quality-gate-report.md; then
-          echo "⚠ AI approved the build with warnings."
-          exit 0
-        fi
-
-        echo "✅ AI Code Quality Gate passed."
+          echo "✅ AI Code Quality Gate passed."
 
   # ---------------------------------------------------------------------------
-  # 4. Trivy Filesystem Scan
+  # 5. Trivy Filesystem Scan
   # ---------------------------------------------------------------------------
   trivy-fs-scan:
-    name: 4️⃣ Trivy FS Scan
+    name: 5️⃣ Trivy FS Scan
     runs-on: ubuntu-latest
     needs: [ code-quality-agent ]
     timeout-minutes: 10
@@ -464,12 +357,12 @@ BLOCKED
       - name: Run Trivy filesystem scan (table)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          scan-type:    'fs'
-          scan-ref:     '.'
-          format:       'table'
-          output:       'trivy-fs-report.txt'
-          severity:     'CRITICAL,HIGH'
-          exit-code:    '0'
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          output: 'trivy-fs-report.txt'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
           ignore-unfixed: true
 
       - name: Setup .NET ${{ env.DOTNET_VERSION }}
@@ -530,10 +423,10 @@ BLOCKED
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
-          scan-ref:  '.'
-          format:    'sarif'
-          output:    'trivy-fs-report.sarif'
-          severity:  'CRITICAL,HIGH'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-report.sarif'
+          severity: 'CRITICAL,HIGH'
           exit-code: '0'
 
       - name: Upload Trivy results to GitHub Security tab
@@ -553,10 +446,10 @@ BLOCKED
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 5. Docker Build
+  # 6. Docker Build
   # ---------------------------------------------------------------------------
   docker-build:
-    name: 5️⃣ Docker Build
+    name: 6️⃣ Docker Build
     runs-on: ubuntu-latest
     needs: [ trivy-fs-scan ]
     timeout-minutes: 20
@@ -601,13 +494,13 @@ BLOCKED
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context:    .
-          file:       ./Dockerfile
-          push:       ${{ github.event_name != 'pull_request' }}
-          tags:       ${{ steps.meta.outputs.tags }}
-          labels:     ${{ steps.meta.outputs.labels }}
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to:   type=gha,mode=max
+          cache-to: type=gha,mode=max
           provenance: false
 
       - name: Tag local image for image scan
@@ -619,10 +512,10 @@ BLOCKED
             .
 
   # ---------------------------------------------------------------------------
-  # 6. Prisma Cloud Image Scan
+  # 7. Prisma Cloud Image Scan
   # ---------------------------------------------------------------------------
   prisma-cloud-scan:
-    name: 6️⃣ Prisma Cloud Image Scan
+    name: 7️⃣ Prisma Cloud Image Scan
     runs-on: ubuntu-latest
     needs: [ docker-build ]
     timeout-minutes: 15
@@ -636,26 +529,26 @@ BLOCKED
       - name: Download twistcli
         run: |
           curl -k \
-          -u "${{ secrets.PRISMA_ACCESS_KEY }}:${{ secrets.PRISMA_SECRET_KEY }}" \
-          "${{ secrets.PRISMA_CONSOLE_URL }}/api/v1/util/twistcli" \
-          --output twistcli
+            -u "${{ secrets.PRISMA_ACCESS_KEY }}:${{ secrets.PRISMA_SECRET_KEY }}" \
+            "${{ secrets.PRISMA_CONSOLE_URL }}/api/v1/util/twistcli" \
+            --output twistcli
 
           chmod +x twistcli
 
       - name: Scan Docker Image
         run: |
           ./twistcli images scan \
-          --address "${{ secrets.PRISMA_CONSOLE_URL }}" \
-          --user "${{ secrets.PRISMA_ACCESS_KEY }}" \
-          --password "${{ secrets.PRISMA_SECRET_KEY }}" \
-          ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+            --address "${{ secrets.PRISMA_CONSOLE_URL }}" \
+            --user "${{ secrets.PRISMA_ACCESS_KEY }}" \
+            --password "${{ secrets.PRISMA_SECRET_KEY }}" \
+            ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
         continue-on-error: true
 
   # ---------------------------------------------------------------------------
-  # 7. Trivy Image Scan
+  # 8. Trivy Image Scan
   # ---------------------------------------------------------------------------
   trivy-image-scan:
-    name: 7️⃣ Trivy Image Scan
+    name: 8️⃣ Trivy Image Scan
     runs-on: ubuntu-latest
     needs: [ docker-build ]
     timeout-minutes: 10
@@ -675,11 +568,11 @@ BLOCKED
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref:    ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
-          format:       'table'
-          output:       'trivy-image-report.txt'
-          severity:     'CRITICAL,HIGH'
-          exit-code:    '0'
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+          format: 'table'
+          output: 'trivy-image-report.txt'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
           ignore-unfixed: true
         continue-on-error: true
 
@@ -688,9 +581,9 @@ BLOCKED
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
-          format:    'sarif'
-          output:    'trivy-image-report.sarif'
-          severity:  'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-image-report.sarif'
+          severity: 'CRITICAL,HIGH'
           exit-code: '0'
         continue-on-error: true
 
@@ -711,10 +604,10 @@ BLOCKED
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 8. Publish Artifact — final aggregated artifact step
+  # 9. Publish Artifact — final aggregated artifact step
   # ---------------------------------------------------------------------------
   publish-artifact:
-    name: 8️⃣ Publish Artifact
+    name: 9️⃣ Publish Artifact
     runs-on: ubuntu-latest
     needs: [ trivy-image-scan, prisma-cloud-scan ]
     if: always()
@@ -729,8 +622,10 @@ BLOCKED
             echo "- **Build:** ✅ SUCCESS"
             echo "- **Unit Tests:** ✅ PASSED"
             echo "- **SonarCloud Analysis:** ✅ COMPLETED"
+            echo "- **Code Quality Gate:** ✅ APPROVED"
             echo "- **Trivy FS Scan:** ✅ COMPLETED"
             echo "- **Docker Build:** ✅ SUCCESS"
+            echo "- **Prisma Cloud Scan:** ✅ COMPLETED"
             echo "- **Trivy Image Scan:** ✅ COMPLETED"
             echo ""
             echo "## Build Metadata"
@@ -748,11 +643,12 @@ BLOCKED
             echo "1. **Build** — restore + compile .NET 8 solution"
             echo "2. **Unit Tests** — xUnit with code coverage"
             echo "3. **SonarCloud Analysis** — code quality & coverage"
-            echo "4. **Trivy FS Scan** — filesystem vulnerability scan"
-            echo "5. **Docker Build** — multi-stage build + push to GHCR"
-            echo "6. **Prisma Cloud Scan** — container image security scan"
-            echo "7. **Trivy Image Scan** — image vulnerability scan"
-            echo "8. **Publish Artifact** — aggregated release output"
+            echo "4. **Code Quality Gate** — AI-powered policy enforcement"
+            echo "5. **Trivy FS Scan** — filesystem vulnerability scan"
+            echo "6. **Docker Build** — multi-stage build + push to GHCR"
+            echo "7. **Prisma Cloud Scan** — container security scan"
+            echo "8. **Trivy Image Scan** — image vulnerability scan"
+            echo "9. **Publish Artifact** — aggregated release output"
           } > artifact-reports/SUMMARY.md
 
       - name: Upload final artifact bundle
