@@ -5,6 +5,10 @@
 # Trivy in both table and SARIF formats. Skipped on pull_request events
 # (the image is local-only on PRs and the push is no-op). The orchestrator
 # must pass `image_tag` from the docker-build outputs.
+#
+# Originally at `.github/workflows/devsecops/trivy-image.yml` — moved to
+# the top level because GitHub Actions only resolves reusable workflows
+# from `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 6️⃣ Trivy Image Scan

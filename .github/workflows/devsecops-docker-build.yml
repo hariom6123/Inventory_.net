@@ -5,6 +5,10 @@
 # is built and tagged locally (no push) so the downstream image scan can
 # operate on a tagged artifact. Emits the multi-tag metadata string the
 # `trivy-image` workflow consumes.
+#
+# Originally at `.github/workflows/devsecops/docker-build.yml` — moved to
+# the top level because GitHub Actions only resolves reusable workflows
+# from `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 5️⃣ Docker Build

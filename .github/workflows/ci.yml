@@ -1,19 +1,20 @@
 # ==============================================================================
 # Inventory Management System — CI/CD Pipeline (Orchestrator)
 # ------------------------------------------------------------------------------
-# Thin orchestrator. Each stage lives in a reusable workflow under
-# `.github/workflows/devsecops/` or `.github/workflows/ai/`. The orchestrator
-# only chains the stages and forwards secrets.
+# Thin orchestrator. Each stage lives in a top-level reusable workflow,
+# prefixed `devsecops-` or `ai-` to keep the stages grouped. GitHub Actions
+# only resolves reusable workflows from `.github/workflows/*.yml` (not from
+# subdirectories), so all stages must live at the top level.
 #
 # Stages:
-#   1. Build              — devsecops/build.yml
-#   2. Unit Tests         — devsecops/unit-test.yml
-#   3. SonarCloud Scan    — devsecops/sonarcloud.yml
-#   4. Code Quality Gate  — ai/quality-gate.yml          (AI agent)
-#   5. Trivy FS Scan      — devsecops/trivy-fs.yml
-#   6. Docker Build       — devsecops/docker-build.yml
-#   7. Trivy Image Scan   — devsecops/trivy-image.yml
-#   8. Publish Artifact   — devsecops/publish.yml
+#   1. Build              — devsecops-build.yml
+#   2. Unit Tests         — devsecops-unit-test.yml
+#   3. SonarCloud Scan    — devsecops-sonarcloud.yml
+#   4. Code Quality Gate  — ai-quality-gate.yml          (AI agent)
+#   5. Trivy FS Scan      — devsecops-trivy-fs.yml
+#   6. Docker Build       — devsecops-docker-build.yml
+#   7. Trivy Image Scan   — devsecops-trivy-image.yml
+#   8. Publish Artifact   — devsecops-publish.yml
 # ==============================================================================
 
 name: CI/CD Pipeline
@@ -59,19 +60,19 @@ jobs:
   # 1️⃣ Build — restore + compile the solution
   build:
     name: 1️⃣ Build
-    uses: ./.github/workflows/devsecops/build.yml
+    uses: ./.github/workflows/devsecops-build.yml
 
   # 2️⃣ Unit Tests — xUnit suite with code coverage
   unit-test:
     name: 2️⃣ Unit Tests
     needs: [ build ]
-    uses: ./.github/workflows/devsecops/unit-test.yml
+    uses: ./.github/workflows/devsecops-unit-test.yml
 
   # 3️⃣ SonarCloud — code quality analysis
   sonarcloud:
     name: 3️⃣ SonarCloud Analysis
     needs: [ unit-test ]
-    uses: ./.github/workflows/devsecops/sonarcloud.yml
+    uses: ./.github/workflows/devsecops-sonarcloud.yml
     with:
       project-key: hariom6123_Inventory_.net
       organization: hariom6123
@@ -81,7 +82,7 @@ jobs:
   quality-gate:
     name: 🤖 Agent 1 - Code Quality Security Gate
     needs: [ sonarcloud ]
-    uses: ./.github/workflows/ai/quality-gate.yml
+    uses: ./.github/workflows/ai-quality-gate.yml
     with:
       project-key: hariom6123_Inventory_.net
     secrets: inherit
@@ -90,13 +91,13 @@ jobs:
   trivy-fs:
     name: 4️⃣ Trivy FS Scan
     needs: [ quality-gate ]
-    uses: ./.github/workflows/devsecops/trivy-fs.yml
+    uses: ./.github/workflows/devsecops-trivy-fs.yml
 
   # 5️⃣ Docker Build
   docker-build:
     name: 5️⃣ Docker Build
     needs: [ trivy-fs ]
-    uses: ./.github/workflows/devsecops/docker-build.yml
+    uses: ./.github/workflows/devsecops-docker-build.yml
     with:
       registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
       local-image-name: inventorymanagement
@@ -106,7 +107,7 @@ jobs:
   trivy-image:
     name: 6️⃣ Trivy Image Scan
     needs: [ docker-build ]
-    uses: ./.github/workflows/devsecops/trivy-image.yml
+    uses: ./.github/workflows/devsecops-trivy-image.yml
     with:
       registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
       image-tag: ${{ needs.docker-build.outputs.image_tag }}
@@ -117,7 +118,7 @@ jobs:
     name: 7️⃣ Publish Artifact
     needs: [ trivy-image ]
     if: always()
-    uses: ./.github/workflows/devsecops/publish.yml
+    uses: ./.github/workflows/devsecops-publish.yml
     with:
       registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
     secrets: inherit

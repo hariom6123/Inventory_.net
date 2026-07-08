@@ -5,6 +5,10 @@
 # reports and coverage produced by the unit-test workflow. The downstream
 # AI quality gate reads the quality gate JSON via the SonarCloud API rather
 # than parsing scanner output.
+#
+# Originally at `.github/workflows/devsecops/sonarcloud.yml` — moved to the
+# top level because GitHub Actions only resolves reusable workflows from
+# `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 3️⃣ SonarCloud Analysis

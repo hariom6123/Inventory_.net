@@ -1,12 +1,16 @@
 # ==============================================================================
-# DevSecOps — Build
+# DevSecOps — Unit Tests
 # ------------------------------------------------------------------------------
-# Restores + compiles the .NET 8 solution in Release mode, publishes the web
-# project, and uploads the output as the `webapp-publish` artifact for the
-# downstream Docker build step.
+# Runs the xUnit suite with code coverage, publishes TRX test results and
+# Cobertura coverage as the `test-results` and `code-coverage` artifacts for
+# SonarCloud and the AI quality gate downstream.
+#
+# Originally at `.github/workflows/devsecops/unit-test.yml` — moved to the
+# top level because GitHub Actions only resolves reusable workflows from
+# `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
-name: 1️⃣ Build
+name: 2️⃣ Unit Tests
 
 on:
   workflow_call:
@@ -21,27 +25,15 @@ on:
         required: false
         type: string
         default: 'InventoryManagementSystem.sln'
-      project:
-        description: 'Web project path'
-        required: false
-        type: string
-        default: 'src/InventoryManagement.Web/InventoryManagement.Web.csproj'
-      publish-dir:
-        description: 'Output directory for `dotnet publish`'
-        required: false
-        type: string
-        default: 'publish'
 
 jobs:
-  build:
-    name: 1️⃣ Build
+  unit-tests:
+    name: 2️⃣ Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup .NET ${{ inputs.dotnet-version }}
         uses: actions/setup-dotnet@v4
@@ -59,20 +51,29 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore ${{ inputs.solution }}
 
-      - name: Build (Release)
-        run: dotnet build ${{ inputs.solution }} --configuration Release --no-restore
+      - name: Run tests with coverage
+        run: |
+          dotnet test ${{ inputs.solution }} \
+            --configuration Release \
+            --no-restore \
+            --logger "trx;LogFileName=test-results.trx" \
+            --logger "console;verbosity=normal" \
+            --collect:"XPlat Code Coverage"
 
-      - name: Publish web project
-        run: >
-          dotnet publish ${{ inputs.project }}
-          --configuration Release
-          --no-build
-          --output ${{ inputs.publish-dir }}
-
-      - name: Upload build artifact
+      - name: Publish test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: webapp-publish
-          path: ${{ inputs.publish-dir }}/
-          if-no-files-found: error
+          name: test-results
+          path: '**/TestResults/**/*.trx'
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publish code coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage
+          path: '**/coverage.cobertura.xml'
+          if-no-files-found: warn
           retention-days: 7

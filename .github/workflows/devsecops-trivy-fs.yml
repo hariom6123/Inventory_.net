@@ -4,8 +4,12 @@
 # Runs aquasecurity/trivy-action against the working tree in both table and
 # SARIF formats. SARIF results are uploaded to the GitHub Security tab on
 # non-PR events. The dependency vulnerability analyst AI agent is defined
-# separately in `ai/dependency-agent.yml`; this workflow only emits the raw
+# separately in `ai-dependency-agent.yml`; this workflow only emits the raw
 # NuGet vulnerability report it consumes.
+#
+# Originally at `.github/workflows/devsecops/trivy-fs.yml` — moved to the
+# top level because GitHub Actions only resolves reusable workflows from
+# `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 4️⃣ Trivy FS Scan

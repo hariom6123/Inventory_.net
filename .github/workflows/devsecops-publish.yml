@@ -4,6 +4,10 @@
 # Final aggregation step. Renders the build summary markdown and uploads the
 # `inventory-management-artifact` bundle. Always runs (the `if: always()` lives
 # on the caller in ci.yml).
+#
+# Originally at `.github/workflows/devsecops/publish.yml` — moved to the top
+# level because GitHub Actions only resolves reusable workflows from
+# `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 7️⃣ Publish Artifact

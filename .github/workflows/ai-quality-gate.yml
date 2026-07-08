@@ -9,6 +9,10 @@
 #   BLOCKED                  → exit 1
 #   APPROVED WITH WARNINGS   → exit 0
 #   APPROVED                 → exit 0
+#
+# Originally at `.github/workflows/ai/quality-gate.yml` — moved to the top
+# level because GitHub Actions only resolves reusable workflows from
+# `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 🤖 Agent 1 - Code Quality Security Gate

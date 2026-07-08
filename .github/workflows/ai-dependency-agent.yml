@@ -5,6 +5,10 @@
 # the NVIDIA NIM endpoint to triage it. The system prompt lives in
 # `ai-prompts/dependency-review.md`. Produces the `agent2-dependency-report`
 # artifact.
+#
+# Originally at `.github/workflows/ai/dependency-agent.yml` — moved to the
+# top level because GitHub Actions only resolves reusable workflows from
+# `.github/workflows/*.yml` (not subdirectories).
 # ==============================================================================
 
 name: 🤖 Agent 2 - Dependency Vulnerability Analyst
