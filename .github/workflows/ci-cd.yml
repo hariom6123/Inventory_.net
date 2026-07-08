@@ -544,7 +544,7 @@ jobs:
         continue-on-error: true
 
   # ---------------------------------------------------------------------------
-  # 8. Trivy Image Scan
+  # 8. Trivy Image Scan (updated)
   # ---------------------------------------------------------------------------
   trivy-image-scan:
     name: 8️⃣ Trivy Image Scan
@@ -563,11 +563,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve pushed image tag from docker-build metadata
+        id: resolve-image
+        run: |
+          echo "docker-build produced tags: '${{ needs.docker-build.outputs.image_tag }}'"
+          TAGS="${{ needs.docker-build.outputs.image_tag }}"
+
+          # Normalize separators (commas/newlines) and drop empty lines
+          printf "%s\n" "$TAGS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d' > /tmp/tags.txt
+
+          # Prefer tag that contains full commit SHA, then tag starting with 'sha-', else first tag
+          SELECTED="$(grep -m1 "${{ github.sha }}" /tmp/tags.txt || grep -m1 '^sha-' /tmp/tags.txt || head -n1 /tmp/tags.txt || true)"
+
+          if [ -z "$SELECTED" ]; then
+            echo "No tag found from docker-build metadata; marking IMAGE_TAG empty."
+            echo "IMAGE_TAG=" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # If metadata entry is full ref (owner/repo:tag), extract the tag portion
+          if echo "$SELECTED" | grep -q ':'; then
+            SELECTED="${SELECTED##*:}"
+          fi
+
+          echo "Selected image tag: $SELECTED"
+          echo "IMAGE_TAG=$SELECTED" >> $GITHUB_ENV
+
+      - name: Pull image (with retries) before scanning
+        if: github.event_name != 'pull_request' && env.IMAGE_TAG != ''
+        run: |
+          IMAGE_REF="${{ env.REGISTRY_IMAGE }}:${IMAGE_TAG}"
+          echo "Attempting to pull $IMAGE_REF"
+          for i in 1 2 3; do
+            if docker pull "$IMAGE_REF"; then
+              echo "Pulled $IMAGE_REF"
+              exit 0
+            else
+              echo "Pull failed (attempt $i/3), retrying..."
+              sleep $((i*3))
+            fi
+          done
+          echo "Failed to pull $IMAGE_REF after retries; continuing may fail."
+          exit 1
+
       - name: Run Trivy image scan (table)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && env.IMAGE_TAG != ''
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_TAG }}
           format: 'table'
           output: 'trivy-image-report.txt'
           severity: 'CRITICAL,HIGH'
@@ -576,10 +619,10 @@ jobs:
         continue-on-error: true
 
       - name: Run Trivy image scan (SARIF)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && env.IMAGE_TAG != ''
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_TAG }}
           format: 'sarif'
           output: 'trivy-image-report.sarif'
           severity: 'CRITICAL,HIGH'
@@ -587,7 +630,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy image results to GitHub Security tab
-        if: github.event_name != 'pull_request' && always()
+        if: github.event_name != 'pull_request' && always() && env.IMAGE_TAG != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image-report.sarif
