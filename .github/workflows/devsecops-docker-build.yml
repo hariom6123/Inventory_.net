@@ -56,7 +56,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
+      image_tag: ${{ steps.emit-sha-tag.outputs.image_tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -109,3 +109,14 @@ jobs:
             --tag ${{ inputs.local-image-name }}:latest \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
             .
+
+      - name: Emit single SHA tag for downstream image scan
+        if: github.event_name != 'pull_request'
+        id: emit-sha-tag
+        run: |
+          # `docker/metadata-action`'s `outputs.tags` is a newline-separated
+          # list (one entry per tag variant). The downstream Trivy image
+          # scan needs a SINGLE immutable tag it can pull, so we emit
+          # `sha-<long-sha>` — which is one of the tags we just pushed
+          # (`type=sha,format=long` in the metadata step above).
+          echo "image_tag=sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
