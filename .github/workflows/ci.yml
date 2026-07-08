@@ -59,19 +59,19 @@ jobs:
   # 1️⃣ Build — restore + compile the solution
   build:
     name: 1️⃣ Build
-    uses: ./.github/workflows/devsecops/build.yml
+    uses: .github/workflows/devsecops/build.yml
 
   # 2️⃣ Unit Tests — xUnit suite with code coverage
   unit-test:
     name: 2️⃣ Unit Tests
     needs: [ build ]
-    uses: ./.github/workflows/devsecops/unit-test.yml
+    uses: .github/workflows/devsecops/unit-test.yml
 
   # 3️⃣ SonarCloud — code quality analysis
   sonarcloud:
     name: 3️⃣ SonarCloud Analysis
     needs: [ unit-test ]
-    uses: ./.github/workflows/devsecops/sonarcloud.yml
+    uses: .github/workflows/devsecops/sonarcloud.yml
     with:
       project-key: hariom6123_Inventory_.net
       organization: hariom6123
@@ -90,13 +90,13 @@ jobs:
   trivy-fs:
     name: 4️⃣ Trivy FS Scan
     needs: [ quality-gate ]
-    uses: ./.github/workflows/devsecops/trivy-fs.yml
+    uses: .github/workflows/devsecops/trivy-fs.yml
 
   # 5️⃣ Docker Build
   docker-build:
     name: 5️⃣ Docker Build
     needs: [ trivy-fs ]
-    uses: ./.github/workflows/devsecops/docker-build.yml
+    uses: .github/workflows/devsecops/docker-build.yml
     with:
       registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
       local-image-name: inventorymanagement
@@ -106,7 +106,7 @@ jobs:
   trivy-image:
     name: 6️⃣ Trivy Image Scan
     needs: [ docker-build ]
-    uses: ./.github/workflows/devsecops/trivy-image.yml
+    uses: .github/workflows/devsecops/trivy-image.yml
     with:
       registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
       image-tag: ${{ needs.docker-build.outputs.image_tag }}
@@ -117,7 +117,7 @@ jobs:
     name: 7️⃣ Publish Artifact
     needs: [ trivy-image ]
     if: always()
-    uses: ./.github/workflows/devsecops/publish.yml
+    uses: .github/workflows/devsecops/publish.yml
     with:
       registry-image: ghcr.io/${{ github.repository_owner }}/inventorymanagement
     secrets: inherit
