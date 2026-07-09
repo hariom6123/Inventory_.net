@@ -576,8 +576,8 @@ jobs:
           SELECTED="$(grep -m1 "${{ github.sha }}" /tmp/tags.txt || grep -m1 '^sha-' /tmp/tags.txt || head -n1 /tmp/tags.txt || true)"
 
           if [ -z "$SELECTED" ]; then
-            echo "No tag found from docker-build metadata; marking IMAGE_TAG empty."
-            echo "IMAGE_TAG=" >> $GITHUB_ENV
+            echo "No tag found from docker-build metadata; marking image_tag empty."
+            echo "image_tag=" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -587,12 +587,14 @@ jobs:
           fi
 
           echo "Selected image tag: $SELECTED"
+          # set both a step output and GITHUB_ENV (so run-time steps can use env if desired)
+          echo "image_tag=$SELECTED" >> $GITHUB_OUTPUT
           echo "IMAGE_TAG=$SELECTED" >> $GITHUB_ENV
 
       - name: Pull image (with retries) before scanning
-        if: github.event_name != 'pull_request' && env.IMAGE_TAG != ''
+        if: github.event_name != 'pull_request' && steps.resolve-image.outputs.image_tag != ''
         run: |
-          IMAGE_REF="${{ env.REGISTRY_IMAGE }}:${IMAGE_TAG}"
+          IMAGE_REF="${{ env.REGISTRY_IMAGE }}:${{ steps.resolve-image.outputs.image_tag }}"
           echo "Attempting to pull $IMAGE_REF"
           for i in 1 2 3; do
             if docker pull "$IMAGE_REF"; then
@@ -607,10 +609,10 @@ jobs:
           exit 1
 
       - name: Run Trivy image scan (table)
-        if: github.event_name != 'pull_request' && env.IMAGE_TAG != ''
+        if: github.event_name != 'pull_request' && steps.resolve-image.outputs.image_tag != ''
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ steps.resolve-image.outputs.image_tag }}
           format: 'table'
           output: 'trivy-image-report.txt'
           severity: 'CRITICAL,HIGH'
@@ -619,10 +621,10 @@ jobs:
         continue-on-error: true
 
       - name: Run Trivy image scan (SARIF)
-        if: github.event_name != 'pull_request' && env.IMAGE_TAG != ''
+        if: github.event_name != 'pull_request' && steps.resolve-image.outputs.image_tag != ''
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.REGISTRY_IMAGE }}:${{ steps.resolve-image.outputs.image_tag }}
           format: 'sarif'
           output: 'trivy-image-report.sarif'
           severity: 'CRITICAL,HIGH'
@@ -630,7 +632,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy image results to GitHub Security tab
-        if: github.event_name != 'pull_request' && always() && env.IMAGE_TAG != ''
+        if: github.event_name != 'pull_request' && always() && steps.resolve-image.outputs.image_tag != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image-report.sarif
@@ -645,80 +647,80 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-   # ---------------------------------------------------------------------------
-   # 9. Deploy to AWS EC2
-   # ---------------------------------------------------------------------------
-   deploy:
-     name: 9️⃣ Deploy to AWS EC2
-     runs-on: ubuntu-latest
-     needs: [ trivy-image-scan ]
-     timeout-minutes: 10
+  # ---------------------------------------------------------------------------
+  # 9. Deploy to AWS EC2
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: 9️⃣ Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    needs: [ trivy-image-scan ]
+    timeout-minutes: 10
 
-     environment:
-       name: production
+    environment:
+      name: production
 
-     steps:
-       - name: 🚀 Deploy Docker Image to EC2
-         uses: appleboy/ssh-action@v1.2.2
-         with:
-           host: ${{ secrets.EC2_HOST }}
-           username: ${{ secrets.EC2_USERNAME }}
-           key: ${{ secrets.EC2_SSH_KEY }}
+    steps:
+      - name: 🚀 Deploy Docker Image to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
 
-           script: |
-             set -e
+          script: |
+            set -e
 
-             IMAGE="ghcr.io/${{ github.repository_owner }}/inventorymanagement:sha-${{ github.sha }}"
-             CONTAINER="inventory-app"
+            IMAGE="ghcr.io/${{ github.repository_owner }}/inventorymanagement:sha-${{ github.sha }}"
+            CONTAINER="inventory-app"
 
-             echo "========================================="
-             echo "🚀 Enterprise Deployment Started"
-             echo "========================================="
+            echo "========================================="
+            echo "🚀 Enterprise Deployment Started"
+            echo "========================================="
 
-             echo "Deploying Image:"
-             echo "$IMAGE"
+            echo "Deploying Image:"
+            echo "$IMAGE"
 
-             echo "-----------------------------------------"
-             echo "Stopping existing container..."
-             docker stop $CONTAINER || true
+            echo "-----------------------------------------"
+            echo "Stopping existing container..."
+            docker stop $CONTAINER || true
 
-             echo "Removing existing container..."
-             docker rm $CONTAINER || true
+            echo "Removing existing container..."
+            docker rm $CONTAINER || true
 
-             echo "-----------------------------------------"
-             echo "Pulling latest verified image..."
-             docker pull $IMAGE
+            echo "-----------------------------------------"
+            echo "Pulling latest verified image..."
+            docker pull $IMAGE
 
-             echo "-----------------------------------------"
-             echo "Starting container..."
+            echo "-----------------------------------------"
+            echo "Starting container..."
 
-             docker run -d \
-               --name $CONTAINER \
-               --restart unless-stopped \
-               -p 80:80 \
-               $IMAGE
+            docker run -d \
+              --name $CONTAINER \
+              --restart unless-stopped \
+              -p 80:80 \
+              $IMAGE
 
-             echo "-----------------------------------------"
-             echo "Waiting for application startup..."
-             sleep 20
+            echo "-----------------------------------------"
+            echo "Waiting for application startup..."
+            sleep 20
 
-             echo "Running health check..."
+            echo "Running health check..."
 
-             curl -f http://localhost || exit 1
+            curl -f http://localhost || exit 1
 
-             echo "-----------------------------------------"
-             echo "Running container:"
-             docker ps
+            echo "-----------------------------------------"
+            echo "Running container:"
+            docker ps
 
-             echo "========================================="
-             echo "✅ Deployment Successful"
-             echo "========================================="
-   
+            echo "========================================="
+            echo "✅ Deployment Successful"
+            echo "========================================="
+
   # ---------------------------------------------------------------------------
   # 10. Publish Artifact — final aggregated artifact step
   # ---------------------------------------------------------------------------
   publish-artifact:
-    name:  Publish Artifact
+    name: Publish Artifact
     runs-on: ubuntu-latest
     needs: [ trivy-image-scan, prisma-cloud-scan ]
     if: always()
