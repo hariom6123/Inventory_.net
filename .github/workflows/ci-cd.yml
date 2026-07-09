@@ -645,11 +645,80 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+   # ---------------------------------------------------------------------------
+   # 9. Deploy to AWS EC2
+   # ---------------------------------------------------------------------------
+   deploy:
+     name: 9️⃣ Deploy to AWS EC2
+     runs-on: ubuntu-latest
+     needs: [ trivy-image-scan ]
+     timeout-minutes: 10
+
+     environment:
+       name: production
+
+     steps:
+       - name: 🚀 Deploy Docker Image to EC2
+         uses: appleboy/ssh-action@v1.2.2
+         with:
+           host: ${{ secrets.EC2_HOST }}
+           username: ${{ secrets.EC2_USERNAME }}
+           key: ${{ secrets.EC2_SSH_KEY }}
+
+           script: |
+             set -e
+
+             IMAGE="ghcr.io/${{ github.repository_owner }}/inventorymanagement:sha-${{ github.sha }}"
+             CONTAINER="inventory-app"
+
+             echo "========================================="
+             echo "🚀 Enterprise Deployment Started"
+             echo "========================================="
+
+             echo "Deploying Image:"
+             echo "$IMAGE"
+
+             echo "-----------------------------------------"
+             echo "Stopping existing container..."
+             docker stop $CONTAINER || true
+
+             echo "Removing existing container..."
+             docker rm $CONTAINER || true
+
+             echo "-----------------------------------------"
+             echo "Pulling latest verified image..."
+             docker pull $IMAGE
+
+             echo "-----------------------------------------"
+             echo "Starting container..."
+
+             docker run -d \
+               --name $CONTAINER \
+               --restart unless-stopped \
+               -p 80:80 \
+               $IMAGE
+
+             echo "-----------------------------------------"
+             echo "Waiting for application startup..."
+             sleep 20
+
+             echo "Running health check..."
+
+             curl -f http://localhost || exit 1
+
+             echo "-----------------------------------------"
+             echo "Running container:"
+             docker ps
+
+             echo "========================================="
+             echo "✅ Deployment Successful"
+             echo "========================================="
+   
   # ---------------------------------------------------------------------------
-  # 9. Publish Artifact — final aggregated artifact step
+  # 10. Publish Artifact — final aggregated artifact step
   # ---------------------------------------------------------------------------
   publish-artifact:
-    name: 9️⃣ Publish Artifact
+    name:  Publish Artifact
     runs-on: ubuntu-latest
     needs: [ trivy-image-scan, prisma-cloud-scan ]
     if: always()
